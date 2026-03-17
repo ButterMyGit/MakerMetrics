@@ -321,6 +321,95 @@ def get_order_level_df(df: pd.DataFrame) -> pd.DataFrame:
     return ordered.drop_duplicates(subset=["Order ID"], keep="first").copy()
 
 
+@st.cache_data(ttl=120)
+def build_order_history(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or "Order ID" not in df.columns:
+        return pd.DataFrame()
+
+    working = df.copy()
+    if "Card Name" not in working.columns and "Item Name" in working.columns:
+        working["Card Name"] = (
+            working["Item Name"]
+            .fillna("")
+            .astype(str)
+            .str.split("|", n=1)
+            .str[0]
+            .str.strip()
+        )
+
+    def _join_unique(series: pd.Series, max_items: int = 4) -> str:
+        values = series.fillna("").astype(str).str.strip()
+        values = values[values != ""]
+        unique_values = list(dict.fromkeys(values.tolist()))
+        if not unique_values:
+            return ""
+        if len(unique_values) <= max_items:
+            return ", ".join(unique_values)
+        return ", ".join(unique_values[:max_items]) + f" +{len(unique_values) - max_items} more"
+
+    agg_spec = {}
+    if "Card Name" in working.columns:
+        agg_spec["Items"] = ("Card Name", _join_unique)
+    if "Style" in working.columns:
+        agg_spec["Styles"] = ("Style", _join_unique)
+    if "Quantity" in working.columns:
+        agg_spec["Units"] = ("Quantity", "sum")
+
+    if agg_spec:
+        order_line_details = working.groupby("Order ID").agg(**agg_spec).reset_index()
+    else:
+        order_line_details = working[["Order ID"]].drop_duplicates().copy()
+
+    if "Units" in order_line_details.columns:
+        order_line_details["Units"] = (
+            pd.to_numeric(order_line_details["Units"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+
+    order_base = get_order_level_df(working)
+    base_cols = [
+        "Order ID",
+        "Sale Date",
+        "Date Paid",
+        "Date Shipped",
+        "Full Name",
+        "Buyer Username",
+        "Order Type",
+        "Payment Method",
+        "Payment Type",
+        "Ship State",
+        "Ship Country",
+        "Coupon Code",
+        "Order Total",
+        "Order Net",
+        "Shipping",
+        "Sales Tax",
+        "Discount Amount",
+    ]
+    order_base = order_base[[col for col in base_cols if col in order_base.columns]].copy()
+
+    if "Payment Method" not in order_base.columns and "Payment Type" in order_base.columns:
+        order_base.rename(columns={"Payment Type": "Payment Method"}, inplace=True)
+
+    if "Full Name" not in order_base.columns and "Buyer Username" in order_base.columns:
+        order_base["Full Name"] = order_base["Buyer Username"]
+
+    history = order_base.merge(order_line_details, on="Order ID", how="left")
+    history["Buyer"] = history.get("Full Name", pd.Series(index=history.index)).fillna(
+        history.get("Buyer Username", pd.Series(index=history.index))
+    )
+
+    if "Items" in history.columns:
+        history["Items"] = history["Items"].fillna("")
+    if "Styles" in history.columns:
+        history["Styles"] = history["Styles"].fillna("")
+    if "Units" not in history.columns:
+        history["Units"] = 0
+
+    return history
+
+
 @st.cache_data(ttl=900)
 def build_order_forecast(df: pd.DataFrame, months_ahead: int) -> tuple[pd.Series, pd.Series, pd.DataFrame, str]:
     order_df = get_order_level_df(df)
@@ -1210,6 +1299,108 @@ def main():
             fig = apply_chart_theme(fig, 320)
             fig.update_layout(xaxis_title="Days to Ship", yaxis_title="Count")
             st.plotly_chart(fig, use_container_width=True)
+
+    # ===== SECTION 10: Order History =========================================
+    section("Order History")
+    history_df = build_order_history(df)
+
+    if history_df.empty:
+        empty_chart_note()
+    else:
+        h1, h2, h3, h4 = st.columns([2, 1, 1, 1])
+
+        search_text = h1.text_input(
+            "Search order, buyer, or item",
+            value="",
+            key="history_search",
+        )
+        coupon_filter = h2.selectbox(
+            "Coupon",
+            ["All", "With coupon", "Without coupon"],
+            key="history_coupon_filter",
+        )
+        sort_choice = h3.selectbox(
+            "Sort",
+            [
+                "Most recent to oldest",
+                "Oldest to most recent",
+                "Highest net to lowest net",
+                "Lowest net to highest net",
+            ],
+            index=0,
+            key="history_sort_choice",
+        )
+        max_rows = h4.selectbox(
+            "Rows",
+            [25, 50, 100, 250],
+            index=1,
+            key="history_row_count",
+        )
+
+        filtered_history = history_df.copy()
+
+        if search_text.strip():
+            needle = search_text.strip().lower()
+            search_cols = [col for col in ["Order ID", "Buyer", "Items", "Styles"] if col in filtered_history.columns]
+            if search_cols:
+                haystack = (
+                    filtered_history[search_cols]
+                    .fillna("")
+                    .astype(str)
+                    .agg(" | ".join, axis=1)
+                    .str.lower()
+                )
+                filtered_history = filtered_history[haystack.str.contains(needle, na=False)]
+
+        if coupon_filter != "All" and "Coupon Code" in filtered_history.columns:
+            has_coupon = filtered_history["Coupon Code"].fillna("").astype(str).str.strip().ne("")
+            if coupon_filter == "With coupon":
+                filtered_history = filtered_history[has_coupon]
+            else:
+                filtered_history = filtered_history[~has_coupon]
+
+        if sort_choice == "Most recent to oldest":
+            if "Sale Date" in filtered_history.columns:
+                filtered_history = filtered_history.sort_values("Sale Date", ascending=False, na_position="last")
+            else:
+                filtered_history = filtered_history.sort_values("Order ID", ascending=False)
+        elif sort_choice == "Oldest to most recent":
+            if "Sale Date" in filtered_history.columns:
+                filtered_history = filtered_history.sort_values("Sale Date", ascending=True, na_position="last")
+            else:
+                filtered_history = filtered_history.sort_values("Order ID", ascending=True)
+        elif sort_choice == "Highest net to lowest net" and "Order Net" in filtered_history.columns:
+            filtered_history = filtered_history.sort_values("Order Net", ascending=False, na_position="last")
+        elif sort_choice == "Lowest net to highest net" and "Order Net" in filtered_history.columns:
+            filtered_history = filtered_history.sort_values("Order Net", ascending=True, na_position="last")
+
+        display = filtered_history.head(max_rows).copy()
+        st.caption(f"Showing {len(display):,} of {len(filtered_history):,} orders")
+
+        for dt_col in ["Sale Date", "Date Paid", "Date Shipped"]:
+            if dt_col in display.columns:
+                display[dt_col] = pd.to_datetime(display[dt_col], errors="coerce").dt.strftime("%Y-%m-%d")
+
+        for money_col in ["Order Total", "Order Net", "Shipping", "Sales Tax", "Discount Amount"]:
+            if money_col in display.columns:
+                display[money_col] = pd.to_numeric(display[money_col], errors="coerce").fillna(0).map(fmt_currency)
+
+        display_columns = [
+            "Sale Date",
+            "Order ID",
+            "Buyer",
+            "Items",
+            "Units",
+            "Order Total",
+            "Order Net",
+            "Coupon Code",
+            "Order Type",
+            "Payment Method",
+            "Ship State",
+            "Date Shipped",
+        ]
+        display_columns = [col for col in display_columns if col in display.columns]
+        st.dataframe(display[display_columns], use_container_width=True, height=360)
 
 
 if __name__ == "__main__":

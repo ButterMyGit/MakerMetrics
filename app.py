@@ -10,6 +10,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 from dotenv import load_dotenv
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from streamlit_autorefresh import st_autorefresh
 
 load_dotenv()
@@ -95,17 +98,17 @@ _CHART_LAYOUT = dict(
 
 PRIMARY = "#2E75B6"
 SECONDARY = "#e6a817"
-DONUT_COLORS = [
+CATEGORICAL_COLORS = [
     "#2E75B6",
-    "#3C82C7",
-    "#205D95",
-    "#4A92D8",
-    "#184B78",
-    "#5CA0E4",
-    "#274F77",
-    "#6CAEEB",
-    "#356A9C",
-    "#143A5B",
+    "#E6A817",
+    "#2FB7A1",
+    "#E86F51",
+    "#7A5AF8",
+    "#5BC0EB",
+    "#9BC53D",
+    "#F08A5D",
+    "#D95D8B",
+    "#6C8EAD",
 ]
 
 # ---------------------------------------------------------------------------
@@ -239,6 +242,146 @@ def style_donut(fig: go.Figure, height: int) -> go.Figure:
     return fig
 
 
+def get_order_level_df(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or "Order ID" not in df.columns:
+        return df.copy()
+    sort_cols = [col for col in ["Sale Date", "Transaction ID"] if col in df.columns]
+    ordered = df.sort_values(sort_cols) if sort_cols else df.copy()
+    return ordered.drop_duplicates(subset=["Order ID"], keep="first").copy()
+
+
+@st.cache_data(ttl=900)
+def build_order_forecast(df: pd.DataFrame, months_ahead: int) -> tuple[pd.Series, pd.Series, pd.DataFrame, str]:
+    order_df = get_order_level_df(df)
+    if order_df.empty or "Sale Date" not in order_df.columns or "Order ID" not in order_df.columns:
+        return pd.Series(dtype=float), pd.Series(dtype=float), pd.DataFrame(), "No model"
+
+    working = order_df.dropna(subset=["Sale Date"]).copy()
+    if working.empty:
+        return pd.Series(dtype=float), pd.Series(dtype=float), pd.DataFrame(), "No model"
+
+    working["Day"] = working["Sale Date"].dt.normalize()
+    daily = working.groupby("Day")["Order ID"].nunique().sort_index().astype(float)
+    full_index = pd.date_range(daily.index.min(), daily.index.max(), freq="D")
+    daily = daily.reindex(full_index, fill_value=0.0)
+
+    horizon_days = max(35, months_ahead * 35)
+    forecast_index = pd.date_range(daily.index.max() + pd.Timedelta(days=1), periods=horizon_days, freq="D")
+    model_name = "Recent average"
+
+    if len(daily) >= 56 and daily.nunique() > 1:
+        try:
+            fit = ExponentialSmoothing(
+                daily,
+                trend="add",
+                seasonal="add",
+                seasonal_periods=7,
+                initialization_method="estimated",
+            ).fit(optimized=True)
+            forecast = fit.forecast(horizon_days)
+            model_name = "Holt-Winters exponential smoothing"
+        except Exception:
+            forecast = pd.Series(daily.tail(28).mean(), index=forecast_index)
+    elif len(daily) >= 14 and daily.nunique() > 1:
+        try:
+            fit = ExponentialSmoothing(
+                daily,
+                trend="add",
+                initialization_method="estimated",
+            ).fit(optimized=True)
+            forecast = fit.forecast(horizon_days)
+            model_name = "Trend exponential smoothing"
+        except Exception:
+            forecast = pd.Series(daily.tail(28).mean(), index=forecast_index)
+    else:
+        forecast = pd.Series(daily.tail(min(14, len(daily))).mean(), index=forecast_index)
+
+    forecast = pd.Series(forecast, index=forecast_index).clip(lower=0)
+    monthly = forecast.groupby(forecast.index.to_period("M")).sum().head(months_ahead)
+    monthly_df = monthly.reset_index()
+    monthly_df.columns = ["Month", "Projected Orders"]
+    monthly_df["Month"] = monthly_df["Month"].astype(str)
+    monthly_df["Projected Orders"] = monthly_df["Projected Orders"].round(1)
+    return daily, forecast, monthly_df, model_name
+
+
+@st.cache_data(ttl=900)
+def build_buyer_clusters(df: pd.DataFrame, requested_clusters: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if df.empty or "Buyer User ID" not in df.columns:
+        return pd.DataFrame(), pd.DataFrame()
+
+    order_df = get_order_level_df(df)
+    order_df = order_df[order_df["Buyer User ID"].notna()].copy()
+    if order_df.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    order_df["Has Coupon"] = 0
+    if "Coupon Code" in order_df.columns:
+        order_df["Has Coupon"] = order_df["Coupon Code"].fillna("").str.strip().ne("").astype(int)
+
+    if "Ship State" in order_df.columns:
+        order_df["Cluster State"] = order_df["Ship State"].fillna("Unknown")
+    else:
+        order_df["Cluster State"] = "Unknown"
+
+    top_states = order_df["Cluster State"].value_counts().head(6).index
+    order_df["Cluster State"] = order_df["Cluster State"].where(order_df["Cluster State"].isin(top_states), "Other")
+
+    buyer_orders = order_df.groupby("Buyer User ID").agg(
+        Name=("Full Name", "first") if "Full Name" in order_df.columns else ("Buyer User ID", "first"),
+        State=("Cluster State", lambda x: x.mode().iloc[0] if not x.mode().empty else "Unknown"),
+        Orders=("Order ID", "nunique"),
+        Total_Spent=("Order Total", "sum") if "Order Total" in order_df.columns else ("Order Net", "sum"),
+        Coupon_Rate=("Has Coupon", "mean"),
+    ).reset_index()
+
+    if "Quantity" in df.columns:
+        buyer_units = df[df["Buyer User ID"].notna()].groupby("Buyer User ID")["Quantity"].sum().reset_index(name="Units")
+        buyer_orders = buyer_orders.merge(buyer_units, on="Buyer User ID", how="left")
+    else:
+        buyer_orders["Units"] = 0
+
+    buyer_orders["Units"] = buyer_orders["Units"].fillna(0)
+    buyer_orders["Avg Order Value"] = buyer_orders["Total_Spent"].div(buyer_orders["Orders"].replace(0, 1))
+
+    if len(buyer_orders) < 3:
+        return pd.DataFrame(), pd.DataFrame()
+
+    cluster_count = min(requested_clusters, len(buyer_orders))
+    numeric_features = buyer_orders[["Total_Spent", "Orders", "Avg Order Value", "Coupon_Rate", "Units"]].fillna(0)
+    state_features = pd.get_dummies(buyer_orders["State"], prefix="State")
+    feature_matrix = pd.concat([numeric_features, state_features], axis=1)
+    scaled = StandardScaler().fit_transform(feature_matrix)
+
+    model = KMeans(n_clusters=cluster_count, n_init=20, random_state=42)
+    raw_labels = model.fit_predict(scaled)
+    buyer_orders["_segment_raw"] = raw_labels
+
+    segment_order = (
+        buyer_orders.groupby("_segment_raw")["Total_Spent"]
+        .mean()
+        .sort_values(ascending=False)
+        .index.tolist()
+    )
+    segment_map = {raw: f"Segment {idx + 1}" for idx, raw in enumerate(segment_order)}
+    buyer_orders["Segment"] = buyer_orders["_segment_raw"].map(segment_map)
+
+    summary = (
+        buyer_orders.groupby("Segment")
+        .agg(
+            Buyers=("Buyer User ID", "count"),
+            Avg_Orders=("Orders", "mean"),
+            Avg_Spend=("Total_Spent", "mean"),
+            Avg_AOV=("Avg Order Value", "mean"),
+            Avg_Coupon_Rate=("Coupon_Rate", "mean"),
+            Primary_State=("State", lambda x: x.mode().iloc[0] if not x.mode().empty else "Unknown"),
+        )
+        .reset_index()
+        .sort_values("Segment")
+    )
+    return buyer_orders.drop(columns=["_segment_raw"]), summary
+
+
 def save_uploaded_csvs(uploaded_files) -> tuple[list[Path], Path]:
     staging_dir = Path(tempfile.mkdtemp(prefix="etsy_upload_"))
     saved_paths = []
@@ -359,21 +502,23 @@ def main():
     if sel_style != "All" and "Style" in df.columns:
         df = df[df["Style"] == sel_style]
 
+    order_df = get_order_level_df(df)
+
     # ---- KPIs --------------------------------------------------------------
     section("Overview")
     k1, k2, k3, k4, k5, k6 = st.columns(6)
 
-    total_orders  = df["Order ID"].nunique()                               if "Order ID"      in df.columns else 0
+    total_orders  = order_df["Order ID"].nunique()                         if "Order ID"      in order_df.columns else 0
     units_sold    = int(df["Quantity"].sum())                              if "Quantity"      in df.columns else 0
-    net_revenue   = df["Order Net"].sum()                                  if "Order Net"     in df.columns else 0
+    net_revenue   = order_df["Order Net"].sum()                            if "Order Net"     in order_df.columns else 0
     avg_order_val = (
-        df.drop_duplicates("Order ID")["Order Total"].mean()
-        if "Order Total" in df.columns and "Order ID" in df.columns and total_orders > 0
+        order_df["Order Total"].mean()
+        if "Order Total" in order_df.columns and total_orders > 0
         else 0
     )
     repeat_buyers = 0
-    if "Buyer User ID" in df.columns and "Order ID" in df.columns:
-        buyer_orders = df.groupby("Buyer User ID")["Order ID"].nunique()
+    if "Buyer User ID" in order_df.columns and "Order ID" in order_df.columns:
+        buyer_orders = order_df.groupby("Buyer User ID")["Order ID"].nunique()
         repeat_buyers = int((buyer_orders > 1).sum())
     unique_products = df["Card Name"].nunique() if "Card Name" in df.columns else 0
 
@@ -496,7 +641,7 @@ def main():
                     names="Style",
                     values="Units",
                     hole=0.45,
-                    color_discrete_sequence=DONUT_COLORS,
+                    color_discrete_sequence=CATEGORICAL_COLORS,
                 )
                 fig.update_traces(
                     hovertemplate="%{label}<br>Units: %{value}<br>%{percent}<extra></extra>",
@@ -529,7 +674,7 @@ def main():
                     names="Label",
                     values="Orders",
                     hole=0.45,
-                    color_discrete_sequence=DONUT_COLORS,
+                    color_discrete_sequence=CATEGORICAL_COLORS,
                 )
                 fig.update_traces(
                     hovertemplate="%{label}<br>Orders: %{value}<br>%{percent}<extra></extra>",
@@ -583,7 +728,49 @@ def main():
                 use_container_width=True,
             )
 
-    # ===== SECTION 5: Repeat Buyers ==========================================
+    # ===== SECTION 5: Order Projection ======================================
+    section("Order Projection")
+    if order_df.empty or "Sale Date" not in order_df.columns or "Order ID" not in order_df.columns:
+        empty_chart_note()
+    else:
+        forecast_months = st.slider("Forecast horizon (months)", 1, 6, 3, key="forecast_months")
+        actual_daily, forecast_daily, forecast_monthly, model_name = build_order_forecast(df, forecast_months)
+
+        if actual_daily.empty or forecast_monthly.empty:
+            empty_chart_note()
+        else:
+            fp_left, fp_right = st.columns([2, 1])
+
+            with fp_left:
+                chart_caption(f"Daily orders forecast using {model_name}")
+                actual_window = actual_daily.tail(90)
+                fig = go.Figure()
+                fig.add_scatter(
+                    x=actual_window.index,
+                    y=actual_window.values,
+                    mode="lines",
+                    name="Actual Orders",
+                    line=dict(color=PRIMARY, width=2),
+                )
+                fig.add_scatter(
+                    x=forecast_daily.index,
+                    y=forecast_daily.values,
+                    mode="lines",
+                    name="Forecast Orders",
+                    line=dict(color=SECONDARY, width=2, dash="dash"),
+                )
+                fig = apply_chart_theme(fig, 360)
+                fig.update_layout(yaxis_title="Orders", xaxis_title="Date")
+                st.plotly_chart(fig, use_container_width=True)
+
+            with fp_right:
+                next_month_orders = forecast_monthly["Projected Orders"].iloc[0]
+                total_horizon_orders = forecast_monthly["Projected Orders"].sum()
+                st.metric("Next month forecast", f"{next_month_orders:.1f}")
+                st.metric(f"Next {forecast_months} months", f"{total_horizon_orders:.1f}")
+                st.dataframe(forecast_monthly, use_container_width=True)
+
+    # ===== SECTION 6: Repeat Buyers ==========================================
     section("Buyer Analysis")
     if "Buyer User ID" not in df.columns:
         empty_chart_note()
@@ -634,7 +821,7 @@ def main():
             tier_counts = buyer_agg["Tier"].value_counts().reset_index()
             tier_counts.columns = ["Tier", "Buyers"]
             fig = px.pie(tier_counts, names="Tier", values="Buyers", hole=0.4,
-                         color_discrete_sequence=[PRIMARY, SECONDARY, "#a0c4e8"])
+                         color_discrete_sequence=CATEGORICAL_COLORS)
             fig.update_traces(
                 hovertemplate="%{label}<br>Buyers: %{value}<br>%{percent}<extra></extra>",
             )
@@ -678,7 +865,7 @@ def main():
             })
             chart_caption("Order Share by Coupon Usage")
             fig = px.pie(pie_data, names="Type", values="Orders", hole=0.4,
-                         color_discrete_sequence=[PRIMARY, "#d0d0d0"])
+                         color_discrete_sequence=CATEGORICAL_COLORS)
             fig.update_traces(
                 hovertemplate="%{label}<br>Orders: %{value}<br>%{percent}<extra></extra>",
             )
@@ -691,7 +878,56 @@ def main():
                 st.metric("Avg net w/ coupon",    fmt_currency(avg_with))
                 st.metric("Avg net w/o coupon",   fmt_currency(avg_without))
 
-    # ===== SECTION 7: Fulfillment Speed ======================================
+    # ===== SECTION 8: Customer Segments ======================================
+    section("Customer Segments")
+    if "Buyer User ID" not in df.columns:
+        empty_chart_note()
+    else:
+        eligible_buyers = df[df["Buyer User ID"].notna()]["Buyer User ID"].nunique()
+        if eligible_buyers < 3:
+            st.info("Need at least 3 buyers with IDs to build customer clusters.")
+        else:
+            max_clusters = min(6, eligible_buyers)
+            cluster_count = st.slider("Number of segments", 3, max_clusters, min(4, max_clusters), key="cluster_count")
+            cluster_df, cluster_summary = build_buyer_clusters(df, cluster_count)
+
+            if cluster_df.empty:
+                empty_chart_note()
+            else:
+                seg_left, seg_right = st.columns([2, 1])
+
+                with seg_left:
+                    chart_caption("Buyer segments based on spend, orders, coupon usage, units, and primary state")
+                    fig = px.scatter(
+                        cluster_df,
+                        x="Total_Spent",
+                        y="Orders",
+                        color="Segment",
+                        size="Units",
+                        hover_data={
+                            "Name": True,
+                            "State": True,
+                            "Avg Order Value": ":.2f",
+                            "Coupon_Rate": ":.0%",
+                            "Total_Spent": ":.2f",
+                            "Units": True,
+                        },
+                        color_discrete_sequence=CATEGORICAL_COLORS,
+                    )
+                    fig = apply_chart_theme(fig, 360)
+                    fig.update_traces(marker=dict(line=dict(width=1, color="#0d1321")))
+                    fig.update_layout(xaxis_title="Total Spend", yaxis_title="Orders")
+                    st.plotly_chart(fig, use_container_width=True)
+
+                with seg_right:
+                    summary_display = cluster_summary.copy()
+                    summary_display["Avg_Spend"] = summary_display["Avg_Spend"].apply(fmt_currency)
+                    summary_display["Avg_AOV"] = summary_display["Avg_AOV"].apply(fmt_currency)
+                    summary_display["Avg_Coupon_Rate"] = summary_display["Avg_Coupon_Rate"].map(lambda val: f"{val:.0%}")
+                    summary_display["Avg_Orders"] = summary_display["Avg_Orders"].map(lambda val: f"{val:.1f}")
+                    st.dataframe(summary_display, use_container_width=True)
+
+    # ===== SECTION 9: Fulfillment Speed ======================================
     section("Fulfillment Speed")
     has_paid    = "Date Paid"    in df.columns
     has_shipped = "Date Shipped" in df.columns

@@ -1,0 +1,24 @@
+# Git and editor files
+.git
+.gitignore
+.vscode
+.idea
+
+# Python cache and environments
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+venv
+.venv
+
+# Local env/secrets/data
+.env
+.env.*
+secrets/*
+!secrets/.gitkeep
+data/watch/*.csv
+data/watch/processed/*
+
+# OS noise
+.DS_Store

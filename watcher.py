@@ -54,6 +54,17 @@ _pair_lock = threading.Lock()
 # Firebase init
 # ---------------------------------------------------------------------------
 def init_firebase() -> firestore.Client:
+    cred_file = Path(CRED_PATH)
+    if cred_file.is_dir():
+        raise RuntimeError(
+            f"FIREBASE_CREDENTIALS points to a directory, expected a JSON file: {CRED_PATH}. "
+            "In Docker, mount ./secrets to /run/secrets and place firebase.json inside ./secrets/."
+        )
+    if not cred_file.exists():
+        raise FileNotFoundError(
+            f"Firebase credentials file not found at {CRED_PATH}. "
+            "Place your service account key at secrets/firebase.json."
+        )
     if not firebase_admin._apps:
         cred = credentials.Certificate(CRED_PATH)
         firebase_admin.initialize_app(cred)

@@ -4,6 +4,7 @@ secrets/
 
 # Python
 venv/
+.venv/
 __pycache__/
 *.pyc
 *.pyo
@@ -35,3 +36,5 @@ build/
 
 # Docker
 *.env.docker
+.env.*
+!.env.example

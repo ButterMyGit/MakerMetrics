@@ -117,6 +117,17 @@ CATEGORICAL_COLORS = [
 @st.cache_resource
 def get_db():
     cred_path = os.getenv("FIREBASE_CREDENTIALS", "secrets/firebase.json")
+    cred_file = Path(cred_path)
+    if cred_file.is_dir():
+        raise RuntimeError(
+            f"FIREBASE_CREDENTIALS points to a directory, expected a JSON file: {cred_path}. "
+            "In Docker, mount ./secrets to /run/secrets and place firebase.json inside ./secrets/."
+        )
+    if not cred_file.exists():
+        raise FileNotFoundError(
+            f"Firebase credentials file not found at {cred_path}. "
+            "Place your service account key at secrets/firebase.json."
+        )
     if not firebase_admin._apps:
         cred = credentials.Certificate(cred_path)
         firebase_admin.initialize_app(cred)

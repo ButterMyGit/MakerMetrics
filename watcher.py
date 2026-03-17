@@ -9,6 +9,7 @@ Supported formats
   items    — EtsySoldOrderItems export  (has Transaction ID + Item Name, no Full Name)
   orders   — EtsySoldOrders export      (has Full Name, no Transaction ID)
   combined — Finance / combined export  (has Transaction ID + Full Name)
+    listings — Etsy listings export       (has TITLE + PRICE + QUANTITY, no Transaction ID)
 
 Run with:  python watcher.py
 """
@@ -19,6 +20,7 @@ import re
 import shutil
 import threading
 import time
+import hashlib
 from datetime import datetime
 from pathlib import Path
 
@@ -38,6 +40,8 @@ load_dotenv()
 WATCH_DIR = Path(os.getenv("WATCH_DIR", "data/watch"))
 PAIR_WAIT = int(os.getenv("PAIR_WAIT_SECONDS", "30"))
 CRED_PATH = os.getenv("FIREBASE_CREDENTIALS", "secrets/firebase.json")
+SALES_COLLECTION = os.getenv("SALES_COLLECTION", "sales")
+LISTINGS_COLLECTION = os.getenv("LISTINGS_COLLECTION", "listings")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -95,10 +99,18 @@ def init_firebase() -> firestore.Client:
 # Format detection
 # ---------------------------------------------------------------------------
 def detect_format(df: pd.DataFrame) -> str:
-    cols = set(df.columns.str.strip())
-    has_tid  = "Transaction ID" in cols
-    has_full = "Full Name" in cols
-    has_item = "Item Name" in cols
+    cols = {str(col).strip() for col in df.columns}
+    upper_cols = {col.upper() for col in cols}
+
+    has_listing_title = "TITLE" in upper_cols
+    has_listing_price = "PRICE" in upper_cols
+    has_listing_qty = "QUANTITY" in upper_cols
+    has_tid = "TRANSACTION ID" in upper_cols
+    has_full = "FULL NAME" in upper_cols
+    has_item = "ITEM NAME" in upper_cols
+
+    if has_listing_title and has_listing_price and has_listing_qty and not has_tid:
+        return "listings"
     if has_tid and has_full:
         return "combined"
     if has_tid and has_item:
@@ -289,7 +301,7 @@ BATCH_SIZE = 490
 
 
 def upsert_to_firestore(db: firestore.Client, df: pd.DataFrame, source_file: str):
-    sales_ref = db.collection("sales")
+    sales_ref = db.collection(SALES_COLLECTION)
     batch = db.batch()
     count = 0
     skipped = 0
@@ -325,6 +337,129 @@ def upsert_to_firestore(db: firestore.Client, df: pd.DataFrame, source_file: str
         committed += count
 
     log.info("Upserted %d records, skipped %d (source: %s)", committed, skipped, source_file)
+
+
+def _slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug[:180]
+
+
+def _listing_doc_id(row: dict) -> str | None:
+    sku = row.get("SKU")
+    if sku:
+        sku_slug = _slugify(str(sku).strip())
+        if sku_slug:
+            return sku_slug
+
+    title = row.get("Listing Title")
+    style_1 = row.get("Variation 1 Values")
+    style_2 = row.get("Variation 2 Values")
+    base = " | ".join([str(v).strip() for v in [title, style_1, style_2] if v])
+
+    if not base:
+        return None
+
+    slug = _slugify(base)
+    if slug:
+        return slug
+
+    digest = hashlib.sha1(base.encode("utf-8")).hexdigest()[:16]
+    return f"listing-{digest}"
+
+
+def clean_listings(df: pd.DataFrame) -> pd.DataFrame:
+    rename_map = {
+        "TITLE": "Listing Title",
+        "DESCRIPTION": "Listing Description",
+        "PRICE": "Listing Price",
+        "CURRENCY_CODE": "Currency",
+        "QUANTITY": "Available Quantity",
+        "TAGS": "Tags",
+        "MATERIALS": "Materials",
+        "VARIATION 1 VALUES": "Variation 1 Values",
+        "VARIATION 2 VALUES": "Variation 2 Values",
+    }
+
+    for source, target in rename_map.items():
+        if source in df.columns and target not in df.columns:
+            df.rename(columns={source: target}, inplace=True)
+
+    str_cols = df.select_dtypes(include="object").columns
+    for col in str_cols:
+        df[col] = df[col].apply(
+            lambda v: None if (pd.isna(v) or str(v).strip() == "") else str(v).strip()
+        )
+
+    if "Listing Price" in df.columns:
+        df["Listing Price"] = df["Listing Price"].map(_parse_currency)
+
+    if "Available Quantity" in df.columns:
+        qty = pd.to_numeric(df["Available Quantity"], errors="coerce").fillna(0)
+        df["Available Quantity"] = qty.astype(int)
+
+    if "Listing Title" in df.columns:
+        parts = df["Listing Title"].str.split("|", n=1, expand=True)
+        df["Card Name"] = parts[0].str.strip() if 0 in parts else None
+        df["Product Type"] = parts[1].str.strip() if 1 in parts else None
+
+    style_source = None
+    for candidate in ["Variation 1 Values", "Variations", "Style"]:
+        if candidate in df.columns:
+            style_source = candidate
+            break
+
+    if style_source:
+        df["Style"] = (
+            df[style_source]
+            .astype(str)
+            .str.replace(r"^(Style:|Custom Property:)\s*", "", regex=True)
+            .str.strip()
+        )
+        df["Style"] = df["Style"].apply(lambda v: None if v in ("nan", "") else v)
+
+    df.dropna(how="all", inplace=True)
+    df.reset_index(drop=True, inplace=True)
+    return df
+
+
+def upsert_listings_to_firestore(db: firestore.Client, df: pd.DataFrame, source_file: str):
+    listings_ref = db.collection(LISTINGS_COLLECTION)
+    batch = db.batch()
+    count = 0
+    skipped = 0
+    committed = 0
+
+    for _, row in df.iterrows():
+        record = {k: v for k, v in row.items() if pd.notna(v) and v is not None}
+        doc_id = _listing_doc_id(record)
+
+        if not doc_id:
+            skipped += 1
+            continue
+
+        doc_ref = listings_ref.document(doc_id)
+        record["_updated_at"] = SERVER_TIMESTAMP
+        record["_source_file"] = source_file
+
+        snap = doc_ref.get()
+        if not snap.exists:
+            record["_created_at"] = SERVER_TIMESTAMP
+
+        batch.set(doc_ref, record, merge=True)
+        count += 1
+
+        if count % BATCH_SIZE == 0:
+            batch.commit()
+            committed += count
+            log.info("  Committed batch of %d listing records", BATCH_SIZE)
+            batch = db.batch()
+            count = 0
+
+    if count:
+        batch.commit()
+        committed += count
+
+    log.info("Upserted %d listings, skipped %d (source: %s)", committed, skipped, source_file)
 
 
 # ---------------------------------------------------------------------------
@@ -371,6 +506,16 @@ def process_files(db: firestore.Client, items_path: Path, orders_path: Path | No
         archive(orders_path)
 
 
+def process_listings_file(db: firestore.Client, path: Path):
+    log.info("Processing listings: %s", path.name)
+
+    listings_df = pd.read_csv(path, dtype=str)
+    listings_df.columns = listings_df.columns.str.strip()
+    listings_df = clean_listings(listings_df)
+    upsert_listings_to_firestore(db, listings_df, path.name)
+    archive(path)
+
+
 def process_single_csv(db: firestore.Client, path: Path):
     """Entry point for a single CSV arriving without a pair."""
     df = pd.read_csv(path, dtype=str)
@@ -385,6 +530,10 @@ def process_single_csv(db: firestore.Client, path: Path):
         )
         return
 
+    if fmt == "listings":
+        process_listings_file(db, path)
+        return
+
     process_files(db, path)
 
 
@@ -396,6 +545,7 @@ def process_existing_csvs(db: firestore.Client, paths: list[Path] | None = None)
         "pairs": 0,
         "solo_items": 0,
         "combined": 0,
+        "listings": 0,
         "skipped_orders": 0,
     }
 
@@ -405,6 +555,7 @@ def process_existing_csvs(db: firestore.Client, paths: list[Path] | None = None)
     log.info("Found %d existing CSV(s) — processing batch", len(existing))
     items_q = []
     orders_q = []
+    listings_q = []
     other_q = []
 
     for path in existing:
@@ -420,6 +571,8 @@ def process_existing_csvs(db: firestore.Client, paths: list[Path] | None = None)
             items_q.append(path)
         elif fmt == "orders":
             orders_q.append(path)
+        elif fmt == "listings":
+            listings_q.append(path)
         else:
             other_q.append(path)
 
@@ -439,6 +592,10 @@ def process_existing_csvs(db: firestore.Client, paths: list[Path] | None = None)
             order_path.name,
         )
         summary["skipped_orders"] += 1
+
+    for path in listings_q:
+        process_listings_file(db, path)
+        summary["listings"] += 1
 
     for path in other_q:
         process_single_csv(db, path)
@@ -478,6 +635,10 @@ def handle_new_file(db: firestore.Client, path: Path):
 
     if fmt == "combined":
         process_files(db, path)
+        return
+
+    if fmt == "listings":
+        process_listings_file(db, path)
         return
 
     if fmt == "orders":

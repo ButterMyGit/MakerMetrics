@@ -17,6 +17,9 @@ from streamlit_autorefresh import st_autorefresh
 
 load_dotenv()
 
+SALES_COLLECTION = os.getenv("SALES_COLLECTION", "sales")
+LISTINGS_COLLECTION = os.getenv("LISTINGS_COLLECTION", "listings")
+
 import firebase_admin
 from firebase_admin import credentials, firestore
 
@@ -157,7 +160,7 @@ def get_db():
 @st.cache_data(ttl=15)
 def load_data() -> tuple[pd.DataFrame, str]:
     db   = get_db()
-    docs = db.collection("sales").stream()
+    docs = db.collection(SALES_COLLECTION).stream()
     rows = [d.to_dict() for d in docs]
     load_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -197,6 +200,43 @@ def load_data() -> tuple[pd.DataFrame, str]:
         df["Week"]       = df["Sale Date"].dt.to_period("W").astype(str)
 
     return df, load_time
+
+
+@st.cache_data(ttl=60)
+def load_listings_data() -> pd.DataFrame:
+    db = get_db()
+    docs = db.collection(LISTINGS_COLLECTION).stream()
+    rows = [d.to_dict() for d in docs]
+
+    if not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows)
+
+    for col in ["_created_at", "_updated_at"]:
+        if col in df.columns:
+            df.drop(columns=[col], inplace=True)
+
+    if "Listing Title" in df.columns and "Card Name" not in df.columns:
+        parts = df["Listing Title"].astype(str).str.split("|", n=1, expand=True)
+        df["Card Name"] = parts[0].str.strip() if 0 in parts else None
+
+    if "Card Name" in df.columns:
+        df["Card Name"] = (
+            df["Card Name"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .replace("", "Unknown Item")
+        )
+
+    if "Available Quantity" in df.columns:
+        df["Available Quantity"] = pd.to_numeric(df["Available Quantity"], errors="coerce").fillna(0).astype(int)
+
+    if "Listing Price" in df.columns:
+        df["Listing Price"] = pd.to_numeric(df["Listing Price"], errors="coerce").fillna(0.0)
+
+    return df
 
 
 # ---------------------------------------------------------------------------
@@ -337,6 +377,137 @@ def build_order_forecast(df: pd.DataFrame, months_ahead: int) -> tuple[pd.Series
 
 
 @st.cache_data(ttl=900)
+def build_item_forecast(
+    sales_df: pd.DataFrame,
+    listings_df: pd.DataFrame,
+    months_ahead: int,
+) -> tuple[pd.DataFrame, list[str], int]:
+    required_cols = {"Sale Date", "Quantity"}
+    if sales_df.empty or not required_cols.issubset(sales_df.columns):
+        return pd.DataFrame(), [], 0
+
+    working = sales_df.dropna(subset=["Sale Date"]).copy()
+    if working.empty:
+        return pd.DataFrame(), [], 0
+
+    if "Card Name" not in working.columns:
+        if "Item Name" in working.columns:
+            working["Card Name"] = (
+                working["Item Name"]
+                .fillna("")
+                .astype(str)
+                .str.split("|", n=1)
+                .str[0]
+            )
+        else:
+            working["Card Name"] = "Unknown Item"
+
+    working["Card Name"] = (
+        working["Card Name"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .replace("", "Unknown Item")
+    )
+    working["Quantity"] = pd.to_numeric(working["Quantity"], errors="coerce").fillna(0.0)
+    working["Day"] = working["Sale Date"].dt.normalize()
+
+    daily_by_item = (
+        working.groupby(["Card Name", "Day"])["Quantity"]
+        .sum()
+        .reset_index()
+    )
+    full_index = pd.date_range(daily_by_item["Day"].min(), daily_by_item["Day"].max(), freq="D")
+    forecast_start = full_index.max() + pd.Timedelta(days=1)
+    month_periods = pd.period_range(start=forecast_start.to_period("M"), periods=months_ahead, freq="M")
+    month_labels = [str(period) for period in month_periods]
+
+    listing_names: set[str] = set()
+    if not listings_df.empty:
+        listing_col = None
+        for candidate in ["Card Name", "Listing Title", "TITLE"]:
+            if candidate in listings_df.columns:
+                listing_col = candidate
+                break
+        if listing_col:
+            listing_names = set(
+                listings_df[listing_col]
+                .fillna("")
+                .astype(str)
+                .str.split("|", n=1)
+                .str[0]
+                .str.strip()
+                .replace("", "Unknown Item")
+                .tolist()
+            )
+
+    product_universe = sorted(set(daily_by_item["Card Name"]).union(listing_names))
+    if not product_universe:
+        return pd.DataFrame(), [], 0
+
+    horizon_days = max(35, months_ahead * 35)
+    forecast_index = pd.date_range(forecast_start, periods=horizon_days, freq="D")
+
+    rows = []
+    for card in product_universe:
+        item_hist = daily_by_item[daily_by_item["Card Name"] == card].set_index("Day")["Quantity"]
+        series = item_hist.reindex(full_index, fill_value=0.0).astype(float)
+
+        if series.sum() <= 0:
+            pred = pd.Series(0.0, index=forecast_index)
+        elif len(series) >= 56 and series.nunique() > 1:
+            try:
+                fit = ExponentialSmoothing(
+                    series,
+                    trend="add",
+                    seasonal="add",
+                    seasonal_periods=7,
+                    initialization_method="estimated",
+                ).fit(optimized=True)
+                pred = fit.forecast(horizon_days)
+            except Exception:
+                pred = pd.Series(series.tail(28).mean(), index=forecast_index)
+        elif len(series) >= 14 and series.nunique() > 1:
+            try:
+                fit = ExponentialSmoothing(
+                    series,
+                    trend="add",
+                    initialization_method="estimated",
+                ).fit(optimized=True)
+                pred = fit.forecast(horizon_days)
+            except Exception:
+                pred = pd.Series(series.tail(28).mean(), index=forecast_index)
+        else:
+            pred = pd.Series(series.tail(min(14, len(series))).mean(), index=forecast_index)
+
+        pred = pd.Series(pred, index=forecast_index).clip(lower=0)
+        monthly = pred.groupby(pred.index.to_period("M")).sum()
+
+        row = {
+            "Card Name": card,
+            "Historical Units (90d)": round(float(series.tail(90).sum()), 1),
+            "In Active Listings": "Yes" if card in listing_names else "No",
+        }
+        forecast_total = 0.0
+        for period in month_periods:
+            value = float(monthly.get(period, 0.0))
+            row[str(period)] = round(value, 1)
+            forecast_total += value
+        row["Forecast Units"] = round(forecast_total, 1)
+        rows.append(row)
+
+    result = pd.DataFrame(rows).sort_values(
+        ["Forecast Units", "Historical Units (90d)"],
+        ascending=[False, False],
+    ).reset_index(drop=True)
+
+    listing_no_sales = int(
+        ((result["In Active Listings"] == "Yes") & (result["Historical Units (90d)"] <= 0)).sum()
+    )
+    return result, month_labels, listing_no_sales
+
+
+@st.cache_data(ttl=900)
 def build_buyer_clusters(df: pd.DataFrame, requested_clusters: int) -> tuple[pd.DataFrame, pd.DataFrame]:
     if df.empty or "Buyer User ID" not in df.columns:
         return pd.DataFrame(), pd.DataFrame()
@@ -448,6 +619,7 @@ def process_sidebar_uploads(uploaded_files) -> dict[str, int]:
 def main():
     # ---- Load data ---------------------------------------------------------
     df_all, load_time = load_data()
+    listings_all = load_listings_data()
 
     # ---- Sidebar -----------------------------------------------------------
     with st.sidebar:
@@ -508,6 +680,7 @@ def main():
                 f"{summary['pairs']} paired batch(es), "
                 f"{summary['solo_items']} solo item file(s), "
                 f"{summary['combined']} combined file(s), "
+                f"{summary.get('listings', 0)} listing file(s), "
                 f"{summary['skipped_orders']} unmatched orders file(s)."
             )
 
@@ -760,11 +933,13 @@ def main():
             )
 
     # ===== SECTION 5: Order Projection ======================================
-    section("Order Projection")
+    section("Sales Projection")
+    forecast_months = st.slider("Forecast horizon (months)", 1, 6, 3, key="forecast_months")
+
+    st.markdown("#### Order Forecast")
     if order_df.empty or "Sale Date" not in order_df.columns or "Order ID" not in order_df.columns:
         empty_chart_note()
     else:
-        forecast_months = st.slider("Forecast horizon (months)", 1, 6, 3, key="forecast_months")
         actual_daily, forecast_daily, forecast_monthly, model_name = build_order_forecast(df, forecast_months)
 
         if actual_daily.empty or forecast_monthly.empty:
@@ -800,6 +975,48 @@ def main():
                 st.metric("Next month forecast", f"{next_month_orders:.1f}")
                 st.metric(f"Next {forecast_months} months", f"{total_horizon_orders:.1f}")
                 st.dataframe(forecast_monthly, use_container_width=True)
+
+    st.markdown("#### Item Unit Forecast")
+    item_forecast_df, month_cols, listing_no_sales = build_item_forecast(df, listings_all, forecast_months)
+
+    if item_forecast_df.empty:
+        st.info("Not enough data to build per-item forecasts yet.")
+    else:
+        it_left, it_right = st.columns([2, 1])
+
+        with it_left:
+            chart_caption("Projected units by item across the selected forecast horizon")
+            plot_df = item_forecast_df.head(12).sort_values("Forecast Units", ascending=True)
+            fig = px.bar(
+                plot_df,
+                x="Forecast Units",
+                y="Card Name",
+                orientation="h",
+                hover_data={
+                    "Historical Units (90d)": True,
+                    "In Active Listings": True,
+                },
+                color_discrete_sequence=[SECONDARY],
+            )
+            fig = apply_chart_theme(fig, max(340, len(plot_df) * 32))
+            fig.update_layout(xaxis_title="Projected Units", yaxis_title="Item")
+            st.plotly_chart(fig, use_container_width=True)
+
+        with it_right:
+            st.metric("Forecasted items", f"{len(item_forecast_df):,}")
+            st.metric("Listings with no recent sales", f"{listing_no_sales:,}")
+            if month_cols:
+                month_one_units = item_forecast_df[month_cols[0]].sum()
+                st.metric(f"{month_cols[0]} units", f"{month_one_units:.1f}")
+
+        display_cols = [
+            "Card Name",
+            "Historical Units (90d)",
+            *month_cols,
+            "Forecast Units",
+            "In Active Listings",
+        ]
+        st.dataframe(item_forecast_df[display_cols], use_container_width=True, height=340)
 
     # ===== SECTION 6: Repeat Buyers ==========================================
     section("Buyer Analysis")

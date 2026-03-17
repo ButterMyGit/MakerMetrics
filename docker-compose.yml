@@ -6,7 +6,7 @@ services:
     container_name: slabguy-dashboard
     command: ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8501"]
     environment:
-      FIREBASE_CREDENTIALS: /run/secrets/firebase.json
+      FIREBASE_CREDENTIALS: /run/secrets
       WATCH_DIR: /app/data/watch
       PAIR_WAIT_SECONDS: ${PAIR_WAIT_SECONDS:-30}
       STREAMLIT_SERVER_HEADLESS: "true"
@@ -25,7 +25,7 @@ services:
     container_name: slabguy-watcher
     command: ["python", "watcher.py"]
     environment:
-      FIREBASE_CREDENTIALS: /run/secrets/firebase.json
+      FIREBASE_CREDENTIALS: /run/secrets
       WATCH_DIR: /app/data/watch
       PAIR_WAIT_SECONDS: ${PAIR_WAIT_SECONDS:-30}
     volumes:

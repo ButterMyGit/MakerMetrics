@@ -114,22 +114,42 @@ CATEGORICAL_COLORS = [
 # ---------------------------------------------------------------------------
 # Firebase helpers
 # ---------------------------------------------------------------------------
+def resolve_credentials_path(raw_path: str) -> Path:
+    path = Path(raw_path)
+    if path.is_file():
+        return path
+
+    candidates = []
+    if path.is_dir():
+        candidates.append(path / "firebase.json")
+        candidates.extend(sorted(path.glob("*.json")))
+
+    if path.parent.exists():
+        candidates.append(path.parent / "firebase.json")
+        candidates.extend(sorted(path.parent.glob("*.json")))
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+
+    if path.is_dir():
+        raise FileNotFoundError(
+            f"No Firebase JSON credential file found in directory: {path}. "
+            "Put firebase.json in that directory or set FIREBASE_CREDENTIALS to a JSON file path."
+        )
+
+    raise FileNotFoundError(
+        f"Firebase credentials file not found at {raw_path}. "
+        "Place your service account key at secrets/firebase.json or set FIREBASE_CREDENTIALS accordingly."
+    )
+
+
 @st.cache_resource
 def get_db():
     cred_path = os.getenv("FIREBASE_CREDENTIALS", "secrets/firebase.json")
-    cred_file = Path(cred_path)
-    if cred_file.is_dir():
-        raise RuntimeError(
-            f"FIREBASE_CREDENTIALS points to a directory, expected a JSON file: {cred_path}. "
-            "In Docker, mount ./secrets to /run/secrets and place firebase.json inside ./secrets/."
-        )
-    if not cred_file.exists():
-        raise FileNotFoundError(
-            f"Firebase credentials file not found at {cred_path}. "
-            "Place your service account key at secrets/firebase.json."
-        )
+    resolved_cred_path = resolve_credentials_path(cred_path)
     if not firebase_admin._apps:
-        cred = credentials.Certificate(cred_path)
+        cred = credentials.Certificate(str(resolved_cred_path))
         firebase_admin.initialize_app(cred)
     return firestore.client()
 

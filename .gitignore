@@ -1,0 +1,37 @@
+# Environment & secrets
+.env
+secrets/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Etsy CSV data — keep the folder structure but never commit raw exports
+data/watch/*.csv
+data/watch/*.json
+data/watch/processed/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# Docker
+*.env.docker

@@ -114,7 +114,6 @@ def section_keys_from_labels(section_labels: list[str]) -> list[str]:
 def clear_onboarding_session_state():
     for key in [
         "onboarding_step",
-        "onboarding_store_name",
         "onboarding_section_labels",
         "onboarding_logo_upload",
         "onboarding_logo_bytes",
@@ -142,55 +141,112 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+THEME_GLOW_COLOR = "rgba(46,117,182,0.14)"
+THEME_GRID_COLOR = "rgba(120,120,120,0.20)"
+THEME_AXIS_LINE = "rgba(120,120,120,0.32)"
+THEME_MARKER_BORDER = "rgba(120,120,120,0.38)"
+SETUP_INPUT_BG = "#e8f7e8"
+SETUP_INPUT_BORDER = "#7dbd7d"
+SETUP_INPUT_TEXT = "#16351f"
+
 # ---------------------------------------------------------------------------
 # Global style
 # ---------------------------------------------------------------------------
 st.markdown(
-    """
+    f"""
     <style>
-    [data-testid="stAppViewContainer"] {
+    [data-testid="stAppViewContainer"] {{
         background:
-            radial-gradient(circle at top left, rgba(46,117,182,0.20), transparent 26%),
-            linear-gradient(180deg, #0d1321 0%, #121a2b 100%);
-        color: #edf3ff;
-    }
-    [data-testid="stHeader"] { background: rgba(0, 0, 0, 0); }
-    [data-testid="stSidebar"] { background-color: #11192b; }
-    [data-testid="stSidebar"] * { color: #edf3ff !important; }
-    .block-container { padding-top: 1.35rem; }
-    .kpi-card {
-        background: rgba(255, 255, 255, 0.06);
+            radial-gradient(circle at top left, {THEME_GLOW_COLOR}, transparent 26%),
+            var(--background-color);
+        color: var(--text-color);
+    }}
+    [data-testid="stHeader"] {{ background: rgba(0, 0, 0, 0); }}
+    [data-testid="stSidebar"] {{ background-color: var(--secondary-background-color); }}
+    [data-testid="stSidebar"] * {{ color: var(--text-color) !important; }}
+    [data-testid="stSidebar"] div[data-baseweb="input"] {{
+        background-color: {SETUP_INPUT_BG} !important;
+        border-radius: 8px;
+    }}
+    [data-testid="stSidebar"] div[data-baseweb="input"] input {{
+        color: {SETUP_INPUT_TEXT} !important;
+    }}
+    [data-testid="stTextInput"] div[data-baseweb="input"] {{
+        background-color: {SETUP_INPUT_BG} !important;
+        border: 1px solid {SETUP_INPUT_BORDER} !important;
+        border-radius: 8px;
+    }}
+    [data-testid="stTextInput"] div[data-baseweb="input"] input {{
+        color: {SETUP_INPUT_TEXT} !important;
+    }}
+    [data-testid="stTextInput"] div[data-baseweb="input"]:focus-within {{
+        box-shadow: 0 0 0 1px {SETUP_INPUT_BORDER} !important;
+        border-color: {SETUP_INPUT_BORDER} !important;
+    }}
+    [data-testid="stSidebar"] div[data-baseweb="select"] > div {{
+        border: 1px solid #7daecc !important;
+        border-radius: 8px !important;
+    }}
+    [data-testid="stSidebar"] div[data-baseweb="select"]:focus-within > div {{
+        border-color: #2E75B6 !important;
+        box-shadow: 0 0 0 1px rgba(46, 117, 182, 0.35) !important;
+    }}
+    [data-testid="stSidebar"] div[data-baseweb="tag"] {{
+        border: 1px solid #7daecc !important;
+        border-radius: 999px !important;
+        background-color: rgba(46, 117, 182, 0.14) !important;
+    }}
+    [role="option"][aria-selected="true"] {{
+        background-color: rgba(46, 117, 182, 0.14) !important;
+    }}
+    [data-testid="stSidebar"] div.stButton > button,
+    [data-testid="stSidebar"] [data-testid="stFileUploader"] button {{
+        white-space: nowrap !important;
+        text-overflow: ellipsis;
+        overflow: hidden;
+        font-size: clamp(0.68rem, 1.9vw, 0.86rem) !important;
+        padding-left: 0.55rem !important;
+        padding-right: 0.55rem !important;
+    }}
+    [data-testid="stSidebar"] .sidebar-upload-row-spacer {{
+        height: 1.95rem;
+    }}
+    .block-container {{ padding-top: 1.35rem; }}
+    .kpi-card {{
+        background: var(--secondary-background-color);
         border-left: 4px solid #2E75B6;
         border-radius: 10px;
         padding: 14px 18px;
         margin-bottom: 4px;
         box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
-    }
-    .kpi-label {
+    }}
+    .kpi-label {{
         font-size: 12px;
-        color: #9fb2d1;
+        color: inherit;
+        opacity: 0.75;
         text-transform: uppercase;
         letter-spacing: .05em;
-    }
-    .kpi-value {
+    }}
+    .kpi-value {{
         font-size: 28px;
         font-weight: 700;
-        color: #f8fbff;
+        color: inherit;
         margin-top: 2px;
-    }
-    .section-header {
+    }}
+    .section-header {{
         font-size: 18px;
         font-weight: 700;
-        color: #f3f7ff;
+        color: inherit;
         border-bottom: 2px solid #2E75B6;
         padding-bottom: 4px;
         margin: 24px 0 12px 0;
-    }
-    .chart-caption {
-        color: #bed0ec;
+    }}
+    .chart-caption {{
+        color: inherit;
+        opacity: 0.85;
         font-size: 0.95rem;
         margin: 0 0 0.35rem 0;
-    }
+    }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -200,8 +256,6 @@ _CHART_LAYOUT = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
     margin=dict(l=18, r=18, t=24, b=18),
-    font=dict(color="#edf3ff"),
-    legend=dict(font=dict(color="#edf3ff")),
 )
 
 PRIMARY = "#2E75B6"
@@ -377,21 +431,17 @@ def apply_chart_theme(fig: go.Figure, height: int, *, pie_like: bool = False) ->
         paper_bgcolor=_CHART_LAYOUT["paper_bgcolor"],
         plot_bgcolor=_CHART_LAYOUT["plot_bgcolor"],
         margin=margin,
-        font=_CHART_LAYOUT["font"],
-        legend=_CHART_LAYOUT["legend"],
         height=height,
     )
     fig.update_xaxes(
-        color="#edf3ff",
-        gridcolor="rgba(237,243,255,0.10)",
+        gridcolor=THEME_GRID_COLOR,
         zeroline=False,
-        linecolor="rgba(237,243,255,0.18)",
+        linecolor=THEME_AXIS_LINE,
     )
     fig.update_yaxes(
-        color="#edf3ff",
-        gridcolor="rgba(237,243,255,0.10)",
+        gridcolor=THEME_GRID_COLOR,
         zeroline=False,
-        linecolor="rgba(237,243,255,0.18)",
+        linecolor=THEME_AXIS_LINE,
     )
     return fig
 
@@ -399,13 +449,12 @@ def apply_chart_theme(fig: go.Figure, height: int, *, pie_like: bool = False) ->
 def style_donut(fig: go.Figure, height: int) -> go.Figure:
     fig.update_traces(
         textinfo="none",
-        marker=dict(line=dict(color="#121a2b", width=2)),
+        marker=dict(line=dict(color=THEME_MARKER_BORDER, width=2)),
     )
     fig = apply_chart_theme(fig, height, pie_like=True)
     fig.update_layout(
         showlegend=True,
         legend=dict(
-            font=dict(color="#edf3ff"),
             bgcolor="rgba(0,0,0,0)",
             orientation="v",
             x=1.0,
@@ -817,13 +866,16 @@ def main():
     has_logo = logo_path_is_valid(logo_path)
     selected_sections = _coerce_selected_sections(settings.get("selected_sections"))
     selected_section_set = set(selected_sections)
+    settings_open = st.session_state.get("settings_menu_open", False)
+
+    if not settings_open:
+        st.session_state["settings_section_labels"] = section_labels_from_keys(selected_sections)
 
     if not settings.get("onboarding_complete", False):
         st.markdown("## Welcome")
         st.caption("Set up your dashboard in two quick steps.")
 
         st.session_state.setdefault("onboarding_step", 1)
-        st.session_state.setdefault("onboarding_store_name", store_name)
         st.session_state.setdefault("onboarding_section_labels", section_labels_from_keys(selected_sections))
 
         _, center, _ = st.columns([1, 2, 1])
@@ -832,12 +884,7 @@ def main():
 
             if st.session_state["onboarding_step"] == 1:
                 st.markdown("### Step 1 of 2")
-                st.markdown("### Store profile")
-                st.text_input(
-                    "Store name",
-                    key="onboarding_store_name",
-                    placeholder="Your Etsy shop name",
-                )
+                st.markdown("### Brand profile")
 
                 logo_upload = st.file_uploader(
                     "Store logo (optional)",
@@ -847,20 +894,17 @@ def main():
                 if logo_upload is not None:
                     st.session_state["onboarding_logo_bytes"] = logo_upload.getvalue()
                     st.session_state["onboarding_logo_name"] = logo_upload.name
-                    st.image(logo_upload, width=140)
+                    st.image(logo_upload, width=220)
+                    st.caption("Uploaded at original quality. Browser tab icons are automatically downscaled by the browser.")
                 elif has_logo:
-                    st.image(logo_path, width=140)
-                    st.caption("Using your current saved logo.")
+                    st.image(logo_path, width=220)
+                    st.caption("Using your current saved logo. Browser tab icons are automatically downscaled by the browser.")
 
                 _, step1_col_r = st.columns([1, 1])
                 with step1_col_r:
                     if st.button("Next", use_container_width=True, key="onboarding_next"):
-                        typed_name = st.session_state.get("onboarding_store_name", "").strip()
-                        if not typed_name:
-                            st.warning("Please enter a store name before continuing.")
-                        else:
-                            st.session_state["onboarding_step"] = 2
-                            st.rerun()
+                        st.session_state["onboarding_step"] = 2
+                        st.rerun()
             else:
                 st.markdown("### Step 2 of 2")
                 st.markdown("### Dashboard sections")
@@ -879,7 +923,6 @@ def main():
                         st.rerun()
                 with step2_col_r:
                     if st.button("Finish Setup", use_container_width=True, key="onboarding_finish"):
-                        typed_name = st.session_state.get("onboarding_store_name", "").strip() or DEFAULT_STORE_NAME
                         chosen_labels = st.session_state.get("onboarding_section_labels", list(SECTION_OPTIONS.keys()))
                         updated_logo_path = logo_path
 
@@ -891,18 +934,21 @@ def main():
 
                         save_app_settings(
                             {
-                                "store_name": typed_name,
+                                "store_name": store_name,
                                 "logo_path": updated_logo_path,
                                 "selected_sections": section_keys_from_labels(chosen_labels),
                                 "onboarding_complete": True,
                             }
                         )
+                        st.session_state["settings_section_labels"] = chosen_labels
+                        st.session_state["settings_menu_open"] = False
                         clear_onboarding_session_state()
                         st.cache_data.clear()
                         st.rerun()
         return
 
-    st_autorefresh(interval=20_000, key="dashboard_autorefresh")
+    if not settings_open:
+        st_autorefresh(interval=20_000, key="dashboard_autorefresh")
 
     # ---- Load data ---------------------------------------------------------
     df_all, load_time = load_data()
@@ -911,55 +957,34 @@ def main():
     # ---- Sidebar -----------------------------------------------------------
     with st.sidebar:
         if has_logo:
-            st.image(logo_path, width=68)
+            st.image(logo_path, width=110)
         st.title(store_name)
         st.caption("Sales Dashboard")
         st.caption("Auto-refreshes every 20 seconds.")
 
-        settings_open = st.session_state.get("settings_menu_open", False)
         toggle_label = "Close settings" if settings_open else "Settings"
         if st.button(toggle_label, use_container_width=True, key="settings_toggle"):
-            st.session_state["settings_menu_open"] = not settings_open
+            settings_open = not settings_open
+            st.session_state["settings_menu_open"] = settings_open
+            if settings_open:
+                st.session_state["settings_section_labels"] = section_labels_from_keys(selected_sections)
             st.rerun()
 
-        if st.session_state.get("settings_menu_open", False):
-            st.caption("Update your store profile and visible dashboard sections.")
-            st.text_input("Store name", value=store_name, key="settings_store_name")
-            settings_logo_upload = st.file_uploader(
-                "Replace logo (optional)",
-                type=["png", "jpg", "jpeg", "webp"],
-                key="settings_logo_upload",
-            )
-            st.multiselect(
-                "Dashboard sections",
-                options=list(SECTION_OPTIONS.keys()),
-                default=section_labels_from_keys(selected_sections),
-                key="settings_section_labels",
-            )
-            st.caption("These settings can be changed later at any time.")
+        if settings_open:
+            st.caption("Update your logo and visible dashboard sections.")
+            if has_logo:
+                st.image(logo_path, width=220)
+                st.caption("Stored at original quality. Browser tabs use small favicon sizes, which can look softer.")
 
-            settings_col_l, settings_col_r = st.columns([1, 1])
-            with settings_col_l:
-                if st.button("Save settings", use_container_width=True, key="settings_save"):
-                    updated_name = st.session_state.get("settings_store_name", "").strip() or DEFAULT_STORE_NAME
-                    updated_logo_path = logo_path
-
-                    if settings_logo_upload is not None:
-                        updated_logo_path = save_logo_bytes(settings_logo_upload.getvalue(), settings_logo_upload.name)
-
-                    save_app_settings(
-                        {
-                            "store_name": updated_name,
-                            "logo_path": updated_logo_path,
-                            "selected_sections": section_keys_from_labels(
-                                st.session_state.get("settings_section_labels", list(SECTION_OPTIONS.keys()))
-                            ),
-                            "onboarding_complete": True,
-                        }
-                    )
-                    st.cache_data.clear()
-                    st.rerun()
-            with settings_col_r:
+            upload_col, remove_col = st.columns([3, 1], gap="small")
+            with upload_col:
+                settings_logo_upload = st.file_uploader(
+                    "Replace logo (optional)",
+                    type=["png", "jpg", "jpeg", "webp"],
+                    key="settings_logo_upload",
+                )
+            with remove_col:
+                st.markdown('<div class="sidebar-upload-row-spacer"></div>', unsafe_allow_html=True)
                 if st.button("Remove logo", use_container_width=True, key="settings_remove_logo"):
                     for old_logo in APP_SETTINGS_DIR.glob("store_logo.*"):
                         try:
@@ -969,7 +994,7 @@ def main():
 
                     save_app_settings(
                         {
-                            "store_name": st.session_state.get("settings_store_name", store_name).strip() or DEFAULT_STORE_NAME,
+                            "store_name": store_name,
                             "logo_path": "",
                             "selected_sections": section_keys_from_labels(
                                 st.session_state.get("settings_section_labels", list(SECTION_OPTIONS.keys()))
@@ -977,8 +1002,36 @@ def main():
                             "onboarding_complete": True,
                         }
                     )
+                    st.session_state["settings_menu_open"] = False
                     st.cache_data.clear()
                     st.rerun()
+
+            st.multiselect(
+                "Dashboard sections",
+                options=list(SECTION_OPTIONS.keys()),
+                key="settings_section_labels",
+            )
+            st.caption("These settings can be changed later at any time.")
+
+            if st.button("Save settings", use_container_width=True, key="settings_save"):
+                updated_logo_path = logo_path
+
+                if settings_logo_upload is not None:
+                    updated_logo_path = save_logo_bytes(settings_logo_upload.getvalue(), settings_logo_upload.name)
+
+                save_app_settings(
+                    {
+                        "store_name": store_name,
+                        "logo_path": updated_logo_path,
+                        "selected_sections": section_keys_from_labels(
+                            st.session_state.get("settings_section_labels", list(SECTION_OPTIONS.keys()))
+                        ),
+                        "onboarding_complete": True,
+                    }
+                )
+                st.session_state["settings_menu_open"] = False
+                st.cache_data.clear()
+                st.rerun()
 
             st.divider()
 
@@ -1062,16 +1115,7 @@ def main():
 
     order_df = get_order_level_df(df)
 
-    if has_logo:
-        header_logo_col, header_text_col = st.columns([1, 7])
-        with header_logo_col:
-            st.image(logo_path, width=88)
-        with header_text_col:
-            st.markdown(f"## {store_name}")
-            st.caption("Performance snapshot for your selected filters.")
-    else:
-        st.markdown(f"## {store_name}")
-        st.caption("Performance snapshot for your selected filters.")
+    st.caption("Performance snapshot for your selected filters.")
 
     if "overview" in selected_section_set:
         # ---- KPIs ----------------------------------------------------------
@@ -1202,7 +1246,6 @@ def main():
                                 title=f"Cumulative {time_met}",
                                 overlaying="y",
                                 side="right",
-                                color="#edf3ff",
                             ),
                             legend=dict(orientation="h", y=1.08),
                             xaxis=dict(tickangle=-45),
@@ -1306,10 +1349,21 @@ def main():
                     hover_data={"Orders": True, "Units": True, "Revenue": ":.2f"},
                 )
                 fig = apply_chart_theme(fig, 430)
+                fig.update_traces(marker_line_color=THEME_MARKER_BORDER, marker_line_width=0.9)
+                fig.update_geos(
+                    showcoastlines=True,
+                    coastlinecolor=THEME_AXIS_LINE,
+                    coastlinewidth=0.8,
+                    showframe=True,
+                    framecolor=THEME_AXIS_LINE,
+                    framewidth=0.9,
+                    bgcolor="rgba(0,0,0,0)",
+                    projection_type="albers usa",
+                )
                 fig.update_layout(
                     coloraxis_colorbar=dict(
-                        tickfont=dict(color="#edf3ff"),
-                        title=dict(font=dict(color="#edf3ff")),
+                        outlinewidth=1,
+                        outlinecolor=THEME_AXIS_LINE,
                     )
                 )
                 st.plotly_chart(fig, use_container_width=True)
@@ -1553,7 +1607,7 @@ def main():
                             color_discrete_sequence=CATEGORICAL_COLORS,
                         )
                         fig = apply_chart_theme(fig, 360)
-                        fig.update_traces(marker=dict(line=dict(width=1, color="#0d1321")))
+                        fig.update_traces(marker=dict(line=dict(width=1, color=THEME_MARKER_BORDER)))
                         fig.update_layout(xaxis_title="Total Spend", yaxis_title="Orders")
                         st.plotly_chart(fig, use_container_width=True)
 

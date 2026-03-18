@@ -2,7 +2,7 @@
 
 A personal sales analytics dashboard built for Etsy shops. Drop in your Etsy CSV exports and get a live, filterable view of your orders, top products, buyers, geographic sales, forecasts, and more — all running locally or in Docker on your own machine.
 
-On first launch, a two-step onboarding flow lets you set the store name, upload an optional logo, and choose which dashboard sections to show. All of these can be changed later from the sidebar settings menu.
+On first launch, a two-step onboarding flow lets you upload an optional logo and choose which dashboard sections to show. For now, store name is fixed in-app. Logo and visible sections can be changed later from the sidebar settings menu. These settings are persisted in `settings/dashboard_settings.json`.
 
 If you want to understand the code or extend it, see [DEVELOPER_README.md](DEVELOPER_README.md).
 
@@ -69,12 +69,15 @@ That's it for Firebase. You won't need to touch it again.
 Requires [Docker](https://www.docker.com/products/docker-desktop/) to be installed. In your terminal, head over to this project folder and run:
 
 ```bash
-docker compose up --build
+docker compose pull
+docker compose up
 ```
 
 Then open [http://localhost:8501](http://localhost:8501).
 
-That's it! Both services (dashboard and watcher) start together. To stop them, press `Ctrl+C` or run `docker compose down`. If you ever want to get rid of this project, just delete the folder and the Docker container will be removed. Your Firebase database will still exist in Google's cloud if you want to come back to it later. Providing the same .json credentials file will reconnect it to the same database.
+That's it! Both services (dashboard and watcher) start together. The compose file is configured to pull prebuilt Hub images: `buttermygit/etsy-sales-dashboard:dashboard` and `buttermygit/etsy-sales-dashboard:watcher`, so local image builds are not required for normal use.
+
+To stop services, press `Ctrl+C` or run `docker compose down`. If you ever want to get rid of this project, just delete the folder and the Docker containers will be removed. Your Firebase database will still exist in Google's cloud if you want to come back to it later. Providing the same `.json` credentials file will reconnect it to the same database.
 
 ### Option B — Local Python (no Docker)
 
@@ -161,3 +164,11 @@ If you dropped only a `SoldOrders` file, that file alone can't be imported — i
 
 **Docker can't find the credentials**
 Make sure the `secrets/` folder exists at the project root and contains `firebase.json`. Docker mounts the entire folder.
+
+---
+
+## Credits
+
+Built by [ButterMyGit](https://github.com/ButterMyGit). Initially built for [TheSlabGuy](https://theslabguy.etsy.com).
+
+Licensed under the [MIT License](LICENSE).

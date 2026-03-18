@@ -22,7 +22,7 @@ This covers architecture, data flow, and extension points for the Etsy Stats Das
 ## Project layout
 
 ```
-etsy-data-dashboard/
+etsy-stats-dashboard/
 ├── app.py                     # Streamlit UI — filters, metrics, all sections
 ├── watcher.py                 # CSV ingestion — detection, pairing, cleaning, upsert
 ├── requirements.txt
@@ -64,7 +64,9 @@ On startup, processes any CSVs already sitting in the watch folder.
 
 Reads the `sales` and `listings` Firestore collections on load, caches with `@st.cache_data(ttl=300)`, and computes all aggregates in memory. Sidebar uploads call the same cleaning/upsert logic as the watcher directly, without going through the file system.
 
-On first run, `app.py` shows a two-step onboarding flow and persists UI settings to `settings/dashboard_settings.json` (store name, optional logo path, selected visible sections, onboarding complete flag).
+On first run, `app.py` shows a two-step onboarding flow and persists UI settings to `settings/dashboard_settings.json` (optional logo path, selected visible sections, onboarding complete flag). A `store_name` key is still retained in settings for compatibility/future use, but store name is not currently user-editable in the UI.
+
+The UI styling is theme-aware (light/dark) via CSS variables and includes a bottom credits footer rendered in `main()`.
 
 ---
 
@@ -178,14 +180,22 @@ Priority rules (items-file version wins in all cases):
 
 ## Docker
 
-Both services use a shared `Dockerfile`. `docker-compose.yml` defines them as separate containers so the watcher and dashboard can be restarted independently.
+`docker-compose.yml` defines dashboard and watcher as separate containers so they can be restarted independently.
+
+By default, compose pulls prebuilt images from Docker Hub:
+- `buttermygit/etsy-sales-dashboard:dashboard`
+- `buttermygit/etsy-sales-dashboard:watcher`
+
+The `Dockerfile` is still used for producing those images during publish/release workflows.
 
 Volume mounts:
 - `./data/watch` → `/app/data/watch`
+- `./settings` → `/app/settings` (dashboard service)
 - `./secrets` → `/run/secrets` (read-only)
 
 ```bash
-docker compose up --build        # start both
+docker compose pull              # fetch/update images
+docker compose up                # start both
 docker compose up dashboard      # dashboard only
 docker compose up watcher        # watcher only
 docker compose logs -f watcher   # tail watcher logs

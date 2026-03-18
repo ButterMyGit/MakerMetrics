@@ -1,5 +1,6 @@
-"""Streamlit analytics dashboard for TheSlabGuy sales data."""
+"""Streamlit analytics dashboard for Etsy sales data."""
 
+import json
 import os
 import tempfile
 from datetime import date, datetime, timedelta
@@ -20,6 +21,112 @@ load_dotenv()
 SALES_COLLECTION = os.getenv("SALES_COLLECTION", "sales")
 LISTINGS_COLLECTION = os.getenv("LISTINGS_COLLECTION", "listings")
 
+APP_SETTINGS_DIR = Path("settings")
+APP_SETTINGS_FILE = APP_SETTINGS_DIR / "dashboard_settings.json"
+DEFAULT_STORE_NAME = "Etsy Sales Dashboard"
+SECTION_OPTIONS = {
+    "Overview KPIs": "overview",
+    "Most Popular Products": "products",
+    "Sales Over Time": "sales_over_time",
+    "Style Breakdown & Payment Methods": "style_payment",
+    "US Sales by State": "us_map",
+    "Sales Projection": "projection",
+    "Buyer Analysis": "buyer_analysis",
+    "Coupon Effectiveness": "coupon",
+    "Customer Segments": "segments",
+    "Fulfillment Speed": "fulfillment",
+    "Order History": "order_history",
+}
+ALL_SECTION_KEYS = list(SECTION_OPTIONS.values())
+
+
+def _default_app_settings() -> dict:
+    return {
+        "store_name": DEFAULT_STORE_NAME,
+        "logo_path": "",
+        "selected_sections": ALL_SECTION_KEYS,
+        "onboarding_complete": False,
+    }
+
+
+def _coerce_selected_sections(raw_sections) -> list[str]:
+    if not isinstance(raw_sections, list):
+        return ALL_SECTION_KEYS
+    selected = [section for section in raw_sections if section in SECTION_OPTIONS.values()]
+    return selected or ALL_SECTION_KEYS
+
+
+def load_app_settings() -> dict:
+    defaults = _default_app_settings()
+    if not APP_SETTINGS_FILE.is_file():
+        return defaults
+
+    try:
+        loaded = json.loads(APP_SETTINGS_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return defaults
+
+    settings = defaults.copy()
+    if isinstance(loaded, dict):
+        settings.update(loaded)
+
+    store_name = str(settings.get("store_name", DEFAULT_STORE_NAME)).strip()
+    settings["store_name"] = store_name or DEFAULT_STORE_NAME
+    settings["logo_path"] = str(settings.get("logo_path", "")).strip()
+    settings["selected_sections"] = _coerce_selected_sections(settings.get("selected_sections"))
+    settings["onboarding_complete"] = bool(settings.get("onboarding_complete", False))
+    return settings
+
+
+def save_app_settings(settings: dict):
+    APP_SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
+    APP_SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+
+
+def logo_path_is_valid(path_str: str) -> bool:
+    return bool(path_str) and Path(path_str).is_file()
+
+
+def save_logo_bytes(logo_bytes: bytes, filename: str | None) -> str:
+    APP_SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
+    suffix = Path(filename or "logo.png").suffix.lower()
+    if suffix not in {".png", ".jpg", ".jpeg", ".webp"}:
+        suffix = ".png"
+
+    target_path = APP_SETTINGS_DIR / f"store_logo{suffix}"
+    for old_path in APP_SETTINGS_DIR.glob("store_logo.*"):
+        if old_path != target_path and old_path.is_file():
+            old_path.unlink()
+
+    target_path.write_bytes(logo_bytes)
+    return str(target_path)
+
+
+def section_labels_from_keys(section_keys: list[str]) -> list[str]:
+    return [label for label, key in SECTION_OPTIONS.items() if key in section_keys]
+
+
+def section_keys_from_labels(section_labels: list[str]) -> list[str]:
+    selected = [SECTION_OPTIONS[label] for label in section_labels if label in SECTION_OPTIONS]
+    return selected or ALL_SECTION_KEYS
+
+
+def clear_onboarding_session_state():
+    for key in [
+        "onboarding_step",
+        "onboarding_store_name",
+        "onboarding_section_labels",
+        "onboarding_logo_upload",
+        "onboarding_logo_bytes",
+        "onboarding_logo_name",
+    ]:
+        st.session_state.pop(key, None)
+
+
+BOOT_SETTINGS = load_app_settings()
+BOOT_STORE_NAME = BOOT_SETTINGS.get("store_name", DEFAULT_STORE_NAME)
+BOOT_ICON = BOOT_SETTINGS.get("logo_path", "") if logo_path_is_valid(BOOT_SETTINGS.get("logo_path", "")) else "📊"
+
 import firebase_admin
 from firebase_admin import credentials, firestore
 
@@ -29,13 +136,11 @@ from watcher import WATCH_DIR, process_existing_csvs
 # Page config — must be first Streamlit call
 # ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title="TheSlabGuy — Sales Dashboard",
-    page_icon="🃏",
+    page_title=f"{BOOT_STORE_NAME} — Sales Dashboard",
+    page_icon=BOOT_ICON,
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
-st_autorefresh(interval=20_000, key="dashboard_live_refresh")
 
 # ---------------------------------------------------------------------------
 # Global style
@@ -706,16 +811,176 @@ def process_sidebar_uploads(uploaded_files) -> dict[str, int]:
 # Main app
 # ---------------------------------------------------------------------------
 def main():
+    settings = load_app_settings()
+    store_name = settings.get("store_name", DEFAULT_STORE_NAME)
+    logo_path = settings.get("logo_path", "")
+    has_logo = logo_path_is_valid(logo_path)
+    selected_sections = _coerce_selected_sections(settings.get("selected_sections"))
+    selected_section_set = set(selected_sections)
+
+    if not settings.get("onboarding_complete", False):
+        st.markdown("## Welcome")
+        st.caption("Set up your dashboard in two quick steps.")
+
+        st.session_state.setdefault("onboarding_step", 1)
+        st.session_state.setdefault("onboarding_store_name", store_name)
+        st.session_state.setdefault("onboarding_section_labels", section_labels_from_keys(selected_sections))
+
+        _, center, _ = st.columns([1, 2, 1])
+        with center:
+            st.progress(st.session_state["onboarding_step"] / 2)
+
+            if st.session_state["onboarding_step"] == 1:
+                st.markdown("### Step 1 of 2")
+                st.markdown("### Store profile")
+                st.text_input(
+                    "Store name",
+                    key="onboarding_store_name",
+                    placeholder="Your Etsy shop name",
+                )
+
+                logo_upload = st.file_uploader(
+                    "Store logo (optional)",
+                    type=["png", "jpg", "jpeg", "webp"],
+                    key="onboarding_logo_upload",
+                )
+                if logo_upload is not None:
+                    st.session_state["onboarding_logo_bytes"] = logo_upload.getvalue()
+                    st.session_state["onboarding_logo_name"] = logo_upload.name
+                    st.image(logo_upload, width=140)
+                elif has_logo:
+                    st.image(logo_path, width=140)
+                    st.caption("Using your current saved logo.")
+
+                _, step1_col_r = st.columns([1, 1])
+                with step1_col_r:
+                    if st.button("Next", use_container_width=True, key="onboarding_next"):
+                        typed_name = st.session_state.get("onboarding_store_name", "").strip()
+                        if not typed_name:
+                            st.warning("Please enter a store name before continuing.")
+                        else:
+                            st.session_state["onboarding_step"] = 2
+                            st.rerun()
+            else:
+                st.markdown("### Step 2 of 2")
+                st.markdown("### Dashboard sections")
+                st.caption("You can change these options any time later from the sidebar settings menu.")
+
+                st.multiselect(
+                    "Sections to display",
+                    options=list(SECTION_OPTIONS.keys()),
+                    key="onboarding_section_labels",
+                )
+
+                step2_col_l, step2_col_r = st.columns([1, 1])
+                with step2_col_l:
+                    if st.button("Back", use_container_width=True, key="onboarding_back"):
+                        st.session_state["onboarding_step"] = 1
+                        st.rerun()
+                with step2_col_r:
+                    if st.button("Finish Setup", use_container_width=True, key="onboarding_finish"):
+                        typed_name = st.session_state.get("onboarding_store_name", "").strip() or DEFAULT_STORE_NAME
+                        chosen_labels = st.session_state.get("onboarding_section_labels", list(SECTION_OPTIONS.keys()))
+                        updated_logo_path = logo_path
+
+                        if "onboarding_logo_bytes" in st.session_state:
+                            updated_logo_path = save_logo_bytes(
+                                st.session_state["onboarding_logo_bytes"],
+                                st.session_state.get("onboarding_logo_name"),
+                            )
+
+                        save_app_settings(
+                            {
+                                "store_name": typed_name,
+                                "logo_path": updated_logo_path,
+                                "selected_sections": section_keys_from_labels(chosen_labels),
+                                "onboarding_complete": True,
+                            }
+                        )
+                        clear_onboarding_session_state()
+                        st.cache_data.clear()
+                        st.rerun()
+        return
+
+    st_autorefresh(interval=20_000, key="dashboard_autorefresh")
+
     # ---- Load data ---------------------------------------------------------
     df_all, load_time = load_data()
     listings_all = load_listings_data()
 
     # ---- Sidebar -----------------------------------------------------------
     with st.sidebar:
-        st.title("🃏 TheSlabGuy")
+        if has_logo:
+            st.image(logo_path, width=68)
+        st.title(store_name)
         st.caption("Sales Dashboard")
         st.caption("Auto-refreshes every 20 seconds.")
-        st.divider()
+
+        settings_open = st.session_state.get("settings_menu_open", False)
+        toggle_label = "Close settings" if settings_open else "Settings"
+        if st.button(toggle_label, use_container_width=True, key="settings_toggle"):
+            st.session_state["settings_menu_open"] = not settings_open
+            st.rerun()
+
+        if st.session_state.get("settings_menu_open", False):
+            st.caption("Update your store profile and visible dashboard sections.")
+            st.text_input("Store name", value=store_name, key="settings_store_name")
+            settings_logo_upload = st.file_uploader(
+                "Replace logo (optional)",
+                type=["png", "jpg", "jpeg", "webp"],
+                key="settings_logo_upload",
+            )
+            st.multiselect(
+                "Dashboard sections",
+                options=list(SECTION_OPTIONS.keys()),
+                default=section_labels_from_keys(selected_sections),
+                key="settings_section_labels",
+            )
+            st.caption("These settings can be changed later at any time.")
+
+            settings_col_l, settings_col_r = st.columns([1, 1])
+            with settings_col_l:
+                if st.button("Save settings", use_container_width=True, key="settings_save"):
+                    updated_name = st.session_state.get("settings_store_name", "").strip() or DEFAULT_STORE_NAME
+                    updated_logo_path = logo_path
+
+                    if settings_logo_upload is not None:
+                        updated_logo_path = save_logo_bytes(settings_logo_upload.getvalue(), settings_logo_upload.name)
+
+                    save_app_settings(
+                        {
+                            "store_name": updated_name,
+                            "logo_path": updated_logo_path,
+                            "selected_sections": section_keys_from_labels(
+                                st.session_state.get("settings_section_labels", list(SECTION_OPTIONS.keys()))
+                            ),
+                            "onboarding_complete": True,
+                        }
+                    )
+                    st.cache_data.clear()
+                    st.rerun()
+            with settings_col_r:
+                if st.button("Remove logo", use_container_width=True, key="settings_remove_logo"):
+                    for old_logo in APP_SETTINGS_DIR.glob("store_logo.*"):
+                        try:
+                            old_logo.unlink()
+                        except OSError:
+                            pass
+
+                    save_app_settings(
+                        {
+                            "store_name": st.session_state.get("settings_store_name", store_name).strip() or DEFAULT_STORE_NAME,
+                            "logo_path": "",
+                            "selected_sections": section_keys_from_labels(
+                                st.session_state.get("settings_section_labels", list(SECTION_OPTIONS.keys()))
+                            ),
+                            "onboarding_complete": True,
+                        }
+                    )
+                    st.cache_data.clear()
+                    st.rerun()
+
+            st.divider()
 
         # Date preset
         preset = st.selectbox(
@@ -733,7 +998,7 @@ def main():
             start_d, end_d = date(today.year - 1, 1, 1), date(today.year - 1, 12, 31)
         elif preset == "Custom":
             start_d = st.date_input("From", value=today - timedelta(days=90))
-            end_d   = st.date_input("To",   value=today)
+            end_d = st.date_input("To", value=today)
         else:
             start_d, end_d = None, None
 
@@ -774,7 +1039,7 @@ def main():
             )
 
         st.divider()
-        if st.button("🔄 Force refresh"):
+        if st.button("Force refresh"):
             st.cache_data.clear()
             st.rerun()
         st.caption(f"Last loaded: {load_time}")
@@ -797,610 +1062,649 @@ def main():
 
     order_df = get_order_level_df(df)
 
-    # ---- KPIs --------------------------------------------------------------
-    section("Overview")
-    k1, k2, k3, k4, k5, k6 = st.columns(6)
+    if has_logo:
+        header_logo_col, header_text_col = st.columns([1, 7])
+        with header_logo_col:
+            st.image(logo_path, width=88)
+        with header_text_col:
+            st.markdown(f"## {store_name}")
+            st.caption("Performance snapshot for your selected filters.")
+    else:
+        st.markdown(f"## {store_name}")
+        st.caption("Performance snapshot for your selected filters.")
 
-    total_orders  = order_df["Order ID"].nunique()                         if "Order ID"      in order_df.columns else 0
-    units_sold    = int(df["Quantity"].sum())                              if "Quantity"      in df.columns else 0
-    net_revenue   = order_df["Order Net"].sum()                            if "Order Net"     in order_df.columns else 0
-    avg_order_val = (
-        order_df["Order Total"].mean()
-        if "Order Total" in order_df.columns and total_orders > 0
-        else 0
-    )
-    repeat_buyers = 0
-    if "Buyer User ID" in order_df.columns and "Order ID" in order_df.columns:
-        buyer_orders = order_df.groupby("Buyer User ID")["Order ID"].nunique()
-        repeat_buyers = int((buyer_orders > 1).sum())
-    unique_products = df["Card Name"].nunique() if "Card Name" in df.columns else 0
+    if "overview" in selected_section_set:
+        # ---- KPIs ----------------------------------------------------------
+        section("Overview")
+        k1, k2, k3, k4, k5, k6 = st.columns(6)
 
-    with k1: kpi_card("Total Orders",     f"{total_orders:,}")
-    with k2: kpi_card("Units Sold",       f"{units_sold:,}")
-    with k3: kpi_card("Net Revenue",      fmt_currency(net_revenue))
-    with k4: kpi_card("Avg Order Value",  fmt_currency(avg_order_val))
-    with k5: kpi_card("Repeat Buyers",    f"{repeat_buyers:,}")
-    with k6: kpi_card("Unique Products",  f"{unique_products:,}")
+        total_orders = order_df["Order ID"].nunique() if "Order ID" in order_df.columns else 0
+        units_sold = int(df["Quantity"].sum()) if "Quantity" in df.columns else 0
+        net_revenue = order_df["Order Net"].sum() if "Order Net" in order_df.columns else 0
+        avg_order_val = (
+            order_df["Order Total"].mean()
+            if "Order Total" in order_df.columns and total_orders > 0
+            else 0
+        )
+        repeat_buyers = 0
+        if "Buyer User ID" in order_df.columns and "Order ID" in order_df.columns:
+            buyer_orders = order_df.groupby("Buyer User ID")["Order ID"].nunique()
+            repeat_buyers = int((buyer_orders > 1).sum())
+        unique_products = df["Card Name"].nunique() if "Card Name" in df.columns else 0
 
-    st.divider()
+        with k1:
+            kpi_card("Total Orders", f"{total_orders:,}")
+        with k2:
+            kpi_card("Units Sold", f"{units_sold:,}")
+        with k3:
+            kpi_card("Net Revenue", fmt_currency(net_revenue))
+        with k4:
+            kpi_card("Avg Order Value", fmt_currency(avg_order_val))
+        with k5:
+            kpi_card("Repeat Buyers", f"{repeat_buyers:,}")
+        with k6:
+            kpi_card("Unique Products", f"{unique_products:,}")
+
+        st.divider()
 
     # ===== SECTIONS 1 & 2 (side by side) ====================================
-    col_left, col_right = st.columns(2)
+    show_products = "products" in selected_section_set
+    show_sales_over_time = "sales_over_time" in selected_section_set
 
-    # ---- Section 1: Most Popular Products ----------------------------------
-    with col_left:
-        section("Most Popular Products")
-        if "Card Name" not in df.columns or df.empty:
-            empty_chart_note()
+    if show_products or show_sales_over_time:
+        if show_products and show_sales_over_time:
+            col_left, col_right = st.columns(2)
+        elif show_products:
+            col_left, col_right = st.container(), None
         else:
-            top_n   = st.slider("Top N", 5, 20, 10, key="top_n")
-            rank_by = st.radio("Rank by", ["Units", "Orders", "Revenue"], horizontal=True, key="rank_by")
+            col_left, col_right = None, st.container()
 
-            prod = (
-                df.groupby("Card Name")
-                .agg(
-                    Units=("Quantity", "sum"),
-                    Orders=("Order ID", "nunique"),
-                    Revenue=("Order Net", "sum"),
-                )
-                .reset_index()
-                .sort_values(rank_by, ascending=False)
-                .head(top_n)
-                .sort_values(rank_by, ascending=True)   # ascending for horizontal bar
-            )
+        if show_products and col_left is not None:
+            with col_left:
+                section("Most Popular Products")
+                if "Card Name" not in df.columns or df.empty:
+                    empty_chart_note()
+                else:
+                    top_n = st.slider("Top N", 5, 20, 10, key="top_n")
+                    rank_by = st.radio("Rank by", ["Units", "Orders", "Revenue"], horizontal=True, key="rank_by")
 
-            if prod.empty:
-                empty_chart_note()
-            else:
-                fig = px.bar(
-                    prod,
-                    x=rank_by,
-                    y="Card Name",
-                    orientation="h",
-                    hover_data={"Units": True, "Orders": True, "Revenue": ":.2f"},
-                    color_discrete_sequence=[PRIMARY],
-                )
-                fig = apply_chart_theme(fig, max(320, top_n * 34))
-                st.plotly_chart(fig, use_container_width=True)
-
-    # ---- Section 2: Sales Over Time ----------------------------------------
-    with col_right:
-        section("Sales Over Time")
-        if df.empty or "Sale Date" not in df.columns:
-            empty_chart_note()
-        else:
-            gran     = st.radio("Granularity", ["Monthly", "Weekly"], horizontal=True, key="gran")
-            time_met = st.radio("Metric", ["Orders", "Units", "Revenue"], horizontal=True, key="time_met")
-            period_col = "Year-Month" if gran == "Monthly" else "Week"
-
-            if period_col not in df.columns:
-                empty_chart_note()
-            else:
-                agg = (
-                    df.groupby(period_col)
-                    .agg(
-                        Orders=("Order ID", "nunique"),
-                        Units=("Quantity", "sum"),
-                        Revenue=("Order Net", "sum"),
+                    prod = (
+                        df.groupby("Card Name")
+                        .agg(
+                            Units=("Quantity", "sum"),
+                            Orders=("Order ID", "nunique"),
+                            Revenue=("Order Net", "sum"),
+                        )
+                        .reset_index()
+                        .sort_values(rank_by, ascending=False)
+                        .head(top_n)
+                        .sort_values(rank_by, ascending=True)
                     )
-                    .reset_index()
-                    .sort_values(period_col)
-                )
-                agg["Cumulative"] = agg[time_met].cumsum()
 
-                fig = go.Figure()
-                fig.add_bar(
-                    x=agg[period_col], y=agg[time_met],
-                    name=time_met, marker_color=PRIMARY,
-                )
-                fig.add_scatter(
-                    x=agg[period_col], y=agg["Cumulative"],
-                    name=f"Cumulative {time_met}",
-                    mode="lines+markers",
-                    line=dict(color=SECONDARY, width=2),
-                    yaxis="y2",
-                )
-                fig = apply_chart_theme(fig, 410)
-                fig.update_layout(
-                    yaxis=dict(title=time_met),
-                    yaxis2=dict(
-                        title=f"Cumulative {time_met}",
-                        overlaying="y",
-                        side="right",
-                        color="#edf3ff",
-                    ),
-                    legend=dict(orientation="h", y=1.08),
-                    xaxis=dict(tickangle=-45),
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                    if prod.empty:
+                        empty_chart_note()
+                    else:
+                        fig = px.bar(
+                            prod,
+                            x=rank_by,
+                            y="Card Name",
+                            orientation="h",
+                            hover_data={"Units": True, "Orders": True, "Revenue": ":.2f"},
+                            color_discrete_sequence=[PRIMARY],
+                        )
+                        fig = apply_chart_theme(fig, max(320, top_n * 34))
+                        st.plotly_chart(fig, use_container_width=True)
+
+        if show_sales_over_time and col_right is not None:
+            with col_right:
+                section("Sales Over Time")
+                if df.empty or "Sale Date" not in df.columns:
+                    empty_chart_note()
+                else:
+                    gran = st.radio("Granularity", ["Monthly", "Weekly"], horizontal=True, key="gran")
+                    time_met = st.radio("Metric", ["Orders", "Units", "Revenue"], horizontal=True, key="time_met")
+                    period_col = "Year-Month" if gran == "Monthly" else "Week"
+
+                    if period_col not in df.columns:
+                        empty_chart_note()
+                    else:
+                        agg = (
+                            df.groupby(period_col)
+                            .agg(
+                                Orders=("Order ID", "nunique"),
+                                Units=("Quantity", "sum"),
+                                Revenue=("Order Net", "sum"),
+                            )
+                            .reset_index()
+                            .sort_values(period_col)
+                        )
+                        agg["Cumulative"] = agg[time_met].cumsum()
+
+                        fig = go.Figure()
+                        fig.add_bar(
+                            x=agg[period_col],
+                            y=agg[time_met],
+                            name=time_met,
+                            marker_color=PRIMARY,
+                        )
+                        fig.add_scatter(
+                            x=agg[period_col],
+                            y=agg["Cumulative"],
+                            name=f"Cumulative {time_met}",
+                            mode="lines+markers",
+                            line=dict(color=SECONDARY, width=2),
+                            yaxis="y2",
+                        )
+                        fig = apply_chart_theme(fig, 410)
+                        fig.update_layout(
+                            yaxis=dict(title=time_met),
+                            yaxis2=dict(
+                                title=f"Cumulative {time_met}",
+                                overlaying="y",
+                                side="right",
+                                color="#edf3ff",
+                            ),
+                            legend=dict(orientation="h", y=1.08),
+                            xaxis=dict(tickangle=-45),
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
 
     # ===== SECTION 3: Style + Payment ========================================
-    section("Style Breakdown & Payment Methods")
-    c3l, c3r = st.columns(2)
+    if "style_payment" in selected_section_set:
+        section("Style Breakdown & Payment Methods")
+        c3l, c3r = st.columns(2)
 
-    with c3l:
-        if "Style" not in df.columns or "Quantity" not in df.columns:
-            empty_chart_note()
-        else:
-            style_agg = df.groupby("Style")["Quantity"].sum().reset_index()
-            style_agg.columns = ["Style", "Units"]
-            style_agg = style_agg.sort_values("Units", ascending=False)
-            if style_agg.empty:
+        with c3l:
+            if "Style" not in df.columns or "Quantity" not in df.columns:
                 empty_chart_note()
             else:
-                chart_caption("Units by Style")
-                fig = px.pie(
-                    style_agg,
-                    names="Style",
-                    values="Units",
-                    hole=0.45,
-                    color_discrete_sequence=CATEGORICAL_COLORS,
+                style_agg = df.groupby("Style")["Quantity"].sum().reset_index()
+                style_agg.columns = ["Style", "Units"]
+                style_agg = style_agg.sort_values("Units", ascending=False)
+                if style_agg.empty:
+                    empty_chart_note()
+                else:
+                    chart_caption("Units by Style")
+                    fig = px.pie(
+                        style_agg,
+                        names="Style",
+                        values="Units",
+                        hole=0.45,
+                        color_discrete_sequence=CATEGORICAL_COLORS,
+                    )
+                    fig.update_traces(
+                        hovertemplate="%{label}<br>Units: %{value}<br>%{percent}<extra></extra>",
+                    )
+                    fig = style_donut(fig, 430)
+                    st.plotly_chart(fig, use_container_width=True)
+
+        with c3r:
+            has_ot = "Order Type" in df.columns
+            has_pm = "Payment Method" in df.columns or "Payment Type" in df.columns
+            pm_col = "Payment Method" if "Payment Method" in df.columns else "Payment Type"
+
+            if not has_ot or not has_pm:
+                empty_chart_note()
+            else:
+                payment_agg = (
+                    df.groupby(["Order Type", pm_col])["Order ID"]
+                    .nunique()
+                    .reset_index()
+                    .sort_values("Order ID", ascending=False)
                 )
-                fig.update_traces(
-                    hovertemplate="%{label}<br>Units: %{value}<br>%{percent}<extra></extra>",
+                payment_agg.columns = ["Order Type", "Payment", "Orders"]
+                payment_agg["Label"] = payment_agg["Order Type"] + " / " + payment_agg["Payment"]
+                if payment_agg.empty:
+                    empty_chart_note()
+                else:
+                    chart_caption("Orders by Type and Payment")
+                    fig = px.pie(
+                        payment_agg,
+                        names="Label",
+                        values="Orders",
+                        hole=0.45,
+                        color_discrete_sequence=CATEGORICAL_COLORS,
+                    )
+                    fig.update_traces(
+                        hovertemplate="%{label}<br>Orders: %{value}<br>%{percent}<extra></extra>",
+                    )
+                    fig = style_donut(fig, 430)
+                    st.plotly_chart(fig, use_container_width=True)
+
+    # ===== SECTION 4: US Map =================================================
+    if "us_map" in selected_section_set:
+        section("US Sales by State")
+        has_state = "Ship State" in df.columns
+        has_country = "Ship Country" in df.columns
+
+        if not has_state:
+            empty_chart_note()
+        else:
+            us_df = df.copy()
+            if has_country:
+                us_df = us_df[us_df["Ship Country"].str.contains("United States", na=False)]
+
+            map_met = st.radio("Map metric", ["Orders", "Units", "Revenue"], horizontal=True, key="map_met")
+            state_agg = (
+                us_df.groupby("Ship State")
+                .agg(Orders=("Order ID", "nunique"),
+                     Units=("Quantity", "sum"),
+                     Revenue=("Order Net", "sum"))
+                .reset_index()
+            )
+
+            if state_agg.empty:
+                empty_chart_note()
+            else:
+                fig = px.choropleth(
+                    state_agg,
+                    locations="Ship State",
+                    locationmode="USA-states",
+                    color=map_met,
+                    scope="usa",
+                    color_continuous_scale=["#dce9f5", PRIMARY],
+                    hover_data={"Orders": True, "Units": True, "Revenue": ":.2f"},
                 )
-                fig = style_donut(fig, 430)
+                fig = apply_chart_theme(fig, 430)
+                fig.update_layout(
+                    coloraxis_colorbar=dict(
+                        tickfont=dict(color="#edf3ff"),
+                        title=dict(font=dict(color="#edf3ff")),
+                    )
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                st.dataframe(
+                    state_agg.sort_values(map_met, ascending=False).reset_index(drop=True),
+                    use_container_width=True,
+                )
+
+    # ===== SECTION 5: Order Projection ======================================
+    if "projection" in selected_section_set:
+        section("Sales Projection")
+        forecast_months = st.slider("Forecast horizon (months)", 1, 6, 3, key="forecast_months")
+
+        st.markdown("#### Order Forecast")
+        if order_df.empty or "Sale Date" not in order_df.columns or "Order ID" not in order_df.columns:
+            empty_chart_note()
+        else:
+            actual_daily, forecast_daily, forecast_monthly, model_name = build_order_forecast(df, forecast_months)
+
+            if actual_daily.empty or forecast_monthly.empty:
+                empty_chart_note()
+            else:
+                fp_left, fp_right = st.columns([2, 1])
+
+                with fp_left:
+                    chart_caption(f"Daily orders forecast using {model_name}")
+                    actual_window = actual_daily.tail(90)
+                    fig = go.Figure()
+                    fig.add_scatter(
+                        x=actual_window.index,
+                        y=actual_window.values,
+                        mode="lines",
+                        name="Actual Orders",
+                        line=dict(color=PRIMARY, width=2),
+                    )
+                    fig.add_scatter(
+                        x=forecast_daily.index,
+                        y=forecast_daily.values,
+                        mode="lines",
+                        name="Forecast Orders",
+                        line=dict(color=SECONDARY, width=2, dash="dash"),
+                    )
+                    fig = apply_chart_theme(fig, 360)
+                    fig.update_layout(yaxis_title="Orders", xaxis_title="Date")
+                    st.plotly_chart(fig, use_container_width=True)
+
+                with fp_right:
+                    next_month_orders = forecast_monthly["Projected Orders"].iloc[0]
+                    total_horizon_orders = forecast_monthly["Projected Orders"].sum()
+                    st.metric("Next month forecast", f"{next_month_orders:.1f}")
+                    st.metric(f"Next {forecast_months} months", f"{total_horizon_orders:.1f}")
+                    st.dataframe(forecast_monthly, use_container_width=True)
+
+        st.markdown("#### Item Unit Forecast")
+        item_forecast_df, month_cols, listing_no_sales = build_item_forecast(df, listings_all, forecast_months)
+
+        if item_forecast_df.empty:
+            st.info("Not enough data to build per-item forecasts yet.")
+        else:
+            it_left, it_right = st.columns([2, 1])
+
+            with it_left:
+                chart_caption("Projected units by item across the selected forecast horizon")
+                plot_df = item_forecast_df.head(12).sort_values("Forecast Units", ascending=True)
+                fig = px.bar(
+                    plot_df,
+                    x="Forecast Units",
+                    y="Card Name",
+                    orientation="h",
+                    hover_data={
+                        "Historical Units (90d)": True,
+                        "In Active Listings": True,
+                    },
+                    color_discrete_sequence=[SECONDARY],
+                )
+                fig = apply_chart_theme(fig, max(340, len(plot_df) * 32))
+                fig.update_layout(xaxis_title="Projected Units", yaxis_title="Item")
                 st.plotly_chart(fig, use_container_width=True)
 
-    with c3r:
-        has_ot = "Order Type"    in df.columns
-        has_pm = "Payment Method" in df.columns or "Payment Type" in df.columns
-        pm_col = "Payment Method" if "Payment Method" in df.columns else "Payment Type"
+            with it_right:
+                st.metric("Forecasted items", f"{len(item_forecast_df):,}")
+                st.metric("Listings with no recent sales", f"{listing_no_sales:,}")
+                if month_cols:
+                    month_one_units = item_forecast_df[month_cols[0]].sum()
+                    st.metric(f"{month_cols[0]} units", f"{month_one_units:.1f}")
 
-        if not has_ot or not has_pm:
+            display_cols = [
+                "Card Name",
+                "Historical Units (90d)",
+                *month_cols,
+                "Forecast Units",
+                "In Active Listings",
+            ]
+            st.dataframe(item_forecast_df[display_cols], use_container_width=True, height=340)
+
+    # ===== SECTION 6: Repeat Buyers ==========================================
+    if "buyer_analysis" in selected_section_set:
+        section("Buyer Analysis")
+        if "Buyer User ID" not in df.columns:
             empty_chart_note()
         else:
-            payment_agg = (
-                df.groupby(["Order Type", pm_col])["Order ID"]
-                .nunique()
-                .reset_index()
-                .sort_values("Order ID", ascending=False)
-            )
-            payment_agg.columns = ["Order Type", "Payment", "Orders"]
-            payment_agg["Label"] = payment_agg["Order Type"] + " / " + payment_agg["Payment"]
-            if payment_agg.empty:
-                empty_chart_note()
-            else:
-                chart_caption("Orders by Type and Payment")
-                fig = px.pie(
-                    payment_agg,
-                    names="Label",
-                    values="Orders",
-                    hole=0.45,
-                    color_discrete_sequence=CATEGORICAL_COLORS,
+            buyer_agg = (
+                df.groupby("Buyer User ID")
+                .agg(
+                    Name=("Full Name", "first") if "Full Name" in df.columns else ("Buyer User ID", "first"),
+                    Orders=("Order ID", "nunique"),
+                    Units=("Quantity", "sum"),
+                    Total_Spent=("Order Total", "sum") if "Order Total" in df.columns else ("Order Net", "sum"),
+                    Last_Purchase=("Sale Date", "max") if "Sale Date" in df.columns else ("Buyer User ID", "first"),
                 )
+                .reset_index()
+            )
+
+            if "Card Name" in df.columns:
+                top_items = (
+                    df.groupby("Buyer User ID")["Card Name"]
+                    .apply(lambda x: ", ".join(x.dropna().unique()[:3]))
+                    .reset_index()
+                )
+                buyer_agg = buyer_agg.merge(top_items, on="Buyer User ID", how="left")
+            else:
+                buyer_agg["Card Name"] = ""
+
+            buyer_agg["Tier"] = buyer_agg["Orders"].apply(
+                lambda n: "⭐⭐⭐ VIP" if n >= 3 else ("⭐⭐ Returning" if n == 2 else "⭐ New")
+            )
+            buyer_agg["Total Spent"] = buyer_agg["Total_Spent"].apply(fmt_currency)
+            buyer_agg["Last Purchase"] = pd.to_datetime(buyer_agg["Last_Purchase"], errors="coerce").dt.strftime("%Y-%m-%d")
+
+            cb5l, cb5r = st.columns([2, 1])
+
+            with cb5l:
+                show_repeat = st.checkbox("Show repeat buyers only", value=True)
+                display_df = buyer_agg[buyer_agg["Orders"] > 1] if show_repeat else buyer_agg
+                display_cols = [c for c in ["Buyer User ID", "Name", "Orders", "Units",
+                                             "Total Spent", "Last Purchase", "Card Name", "Tier"]
+                                if c in display_df.columns]
+                st.dataframe(
+                    display_df[display_cols].sort_values("Orders", ascending=False).reset_index(drop=True),
+                    use_container_width=True,
+                )
+
+            with cb5r:
+                chart_caption("Buyer Tier Share")
+                tier_counts = buyer_agg["Tier"].value_counts().reset_index()
+                tier_counts.columns = ["Tier", "Buyers"]
+                fig = px.pie(tier_counts, names="Tier", values="Buyers", hole=0.4,
+                             color_discrete_sequence=CATEGORICAL_COLORS)
+                fig.update_traces(
+                    hovertemplate="%{label}<br>Buyers: %{value}<br>%{percent}<extra></extra>",
+                )
+                fig = style_donut(fig, 320)
+                st.plotly_chart(fig, use_container_width=True)
+
+    # ===== SECTION 6: Coupon Effectiveness ===================================
+    if "coupon" in selected_section_set:
+        section("Coupon Effectiveness")
+        if "Coupon Code" not in df.columns:
+            empty_chart_note()
+        else:
+            coupon_df = df[df["Coupon Code"].notna() & (df["Coupon Code"] != "")].copy()
+            no_coupon_df = df[df["Coupon Code"].isna() | (df["Coupon Code"] == "")].copy()
+
+            c6l, c6r = st.columns([2, 1])
+
+            with c6l:
+                if coupon_df.empty:
+                    st.info("No coupon usage in selected period.")
+                else:
+                    coupon_tbl = (
+                        coupon_df.groupby("Coupon Code")
+                        .agg(
+                            Uses=("Order ID", "nunique"),
+                            Total_Discounted=("Discount Amount", "sum") if "Discount Amount" in coupon_df.columns else ("Order ID", "nunique"),
+                            Avg_Net_Order=("Order Net", "mean") if "Order Net" in coupon_df.columns else ("Order ID", "nunique"),
+                        )
+                        .reset_index()
+                    )
+                    coupon_tbl.columns = ["Coupon Code", "Uses", "Total Discounted", "Avg Net Order"]
+                    coupon_tbl["Total Discounted"] = coupon_tbl["Total Discounted"].apply(fmt_currency)
+                    coupon_tbl["Avg Net Order"] = coupon_tbl["Avg Net Order"].apply(fmt_currency)
+                    st.dataframe(coupon_tbl, use_container_width=True)
+
+            with c6r:
+                coupon_order_count = coupon_df["Order ID"].nunique() if "Order ID" in coupon_df.columns else 0
+                no_coupon_order_count = no_coupon_df["Order ID"].nunique() if "Order ID" in no_coupon_df.columns else 0
+                pie_data = pd.DataFrame({
+                    "Type": ["With coupon", "Without coupon"],
+                    "Orders": [coupon_order_count, no_coupon_order_count],
+                })
+                chart_caption("Order Share by Coupon Usage")
+                fig = px.pie(pie_data, names="Type", values="Orders", hole=0.4,
+                             color_discrete_sequence=CATEGORICAL_COLORS)
                 fig.update_traces(
                     hovertemplate="%{label}<br>Orders: %{value}<br>%{percent}<extra></extra>",
                 )
-                fig = style_donut(fig, 430)
+                fig = style_donut(fig, 280)
                 st.plotly_chart(fig, use_container_width=True)
 
-    # ===== SECTION 4: US Map =================================================
-    section("US Sales by State")
-    has_state   = "Ship State"   in df.columns
-    has_country = "Ship Country" in df.columns
-
-    if not has_state:
-        empty_chart_note()
-    else:
-        us_df = df.copy()
-        if has_country:
-            us_df = us_df[us_df["Ship Country"].str.contains("United States", na=False)]
-
-        map_met = st.radio("Map metric", ["Orders", "Units", "Revenue"], horizontal=True, key="map_met")
-        state_agg = (
-            us_df.groupby("Ship State")
-            .agg(Orders=("Order ID", "nunique"),
-                 Units=("Quantity", "sum"),
-                 Revenue=("Order Net", "sum"))
-            .reset_index()
-        )
-
-        if state_agg.empty:
-            empty_chart_note()
-        else:
-            fig = px.choropleth(
-                state_agg,
-                locations="Ship State",
-                locationmode="USA-states",
-                color=map_met,
-                scope="usa",
-                color_continuous_scale=["#dce9f5", PRIMARY],
-                hover_data={"Orders": True, "Units": True, "Revenue": ":.2f"},
-            )
-            fig = apply_chart_theme(fig, 430)
-            fig.update_layout(
-                coloraxis_colorbar=dict(
-                    tickfont=dict(color="#edf3ff"),
-                    title=dict(font=dict(color="#edf3ff")),
-                )
-            )
-            st.plotly_chart(fig, use_container_width=True)
-            st.dataframe(
-                state_agg.sort_values(map_met, ascending=False).reset_index(drop=True),
-                use_container_width=True,
-            )
-
-    # ===== SECTION 5: Order Projection ======================================
-    section("Sales Projection")
-    forecast_months = st.slider("Forecast horizon (months)", 1, 6, 3, key="forecast_months")
-
-    st.markdown("#### Order Forecast")
-    if order_df.empty or "Sale Date" not in order_df.columns or "Order ID" not in order_df.columns:
-        empty_chart_note()
-    else:
-        actual_daily, forecast_daily, forecast_monthly, model_name = build_order_forecast(df, forecast_months)
-
-        if actual_daily.empty or forecast_monthly.empty:
-            empty_chart_note()
-        else:
-            fp_left, fp_right = st.columns([2, 1])
-
-            with fp_left:
-                chart_caption(f"Daily orders forecast using {model_name}")
-                actual_window = actual_daily.tail(90)
-                fig = go.Figure()
-                fig.add_scatter(
-                    x=actual_window.index,
-                    y=actual_window.values,
-                    mode="lines",
-                    name="Actual Orders",
-                    line=dict(color=PRIMARY, width=2),
-                )
-                fig.add_scatter(
-                    x=forecast_daily.index,
-                    y=forecast_daily.values,
-                    mode="lines",
-                    name="Forecast Orders",
-                    line=dict(color=SECONDARY, width=2, dash="dash"),
-                )
-                fig = apply_chart_theme(fig, 360)
-                fig.update_layout(yaxis_title="Orders", xaxis_title="Date")
-                st.plotly_chart(fig, use_container_width=True)
-
-            with fp_right:
-                next_month_orders = forecast_monthly["Projected Orders"].iloc[0]
-                total_horizon_orders = forecast_monthly["Projected Orders"].sum()
-                st.metric("Next month forecast", f"{next_month_orders:.1f}")
-                st.metric(f"Next {forecast_months} months", f"{total_horizon_orders:.1f}")
-                st.dataframe(forecast_monthly, use_container_width=True)
-
-    st.markdown("#### Item Unit Forecast")
-    item_forecast_df, month_cols, listing_no_sales = build_item_forecast(df, listings_all, forecast_months)
-
-    if item_forecast_df.empty:
-        st.info("Not enough data to build per-item forecasts yet.")
-    else:
-        it_left, it_right = st.columns([2, 1])
-
-        with it_left:
-            chart_caption("Projected units by item across the selected forecast horizon")
-            plot_df = item_forecast_df.head(12).sort_values("Forecast Units", ascending=True)
-            fig = px.bar(
-                plot_df,
-                x="Forecast Units",
-                y="Card Name",
-                orientation="h",
-                hover_data={
-                    "Historical Units (90d)": True,
-                    "In Active Listings": True,
-                },
-                color_discrete_sequence=[SECONDARY],
-            )
-            fig = apply_chart_theme(fig, max(340, len(plot_df) * 32))
-            fig.update_layout(xaxis_title="Projected Units", yaxis_title="Item")
-            st.plotly_chart(fig, use_container_width=True)
-
-        with it_right:
-            st.metric("Forecasted items", f"{len(item_forecast_df):,}")
-            st.metric("Listings with no recent sales", f"{listing_no_sales:,}")
-            if month_cols:
-                month_one_units = item_forecast_df[month_cols[0]].sum()
-                st.metric(f"{month_cols[0]} units", f"{month_one_units:.1f}")
-
-        display_cols = [
-            "Card Name",
-            "Historical Units (90d)",
-            *month_cols,
-            "Forecast Units",
-            "In Active Listings",
-        ]
-        st.dataframe(item_forecast_df[display_cols], use_container_width=True, height=340)
-
-    # ===== SECTION 6: Repeat Buyers ==========================================
-    section("Buyer Analysis")
-    if "Buyer User ID" not in df.columns:
-        empty_chart_note()
-    else:
-        buyer_agg = (
-            df.groupby("Buyer User ID")
-            .agg(
-                Name=("Full Name", "first") if "Full Name" in df.columns else ("Buyer User ID", "first"),
-                Orders=("Order ID", "nunique"),
-                Units=("Quantity", "sum"),
-                Total_Spent=("Order Total", "sum") if "Order Total" in df.columns else ("Order Net", "sum"),
-                Last_Purchase=("Sale Date", "max") if "Sale Date" in df.columns else ("Buyer User ID", "first"),
-            )
-            .reset_index()
-        )
-
-        if "Card Name" in df.columns:
-            top_items = (
-                df.groupby("Buyer User ID")["Card Name"]
-                .apply(lambda x: ", ".join(x.dropna().unique()[:3]))
-                .reset_index()
-            )
-            buyer_agg = buyer_agg.merge(top_items, on="Buyer User ID", how="left")
-        else:
-            buyer_agg["Card Name"] = ""
-
-        buyer_agg["Tier"] = buyer_agg["Orders"].apply(
-            lambda n: "⭐⭐⭐ VIP" if n >= 3 else ("⭐⭐ Returning" if n == 2 else "⭐ New")
-        )
-        buyer_agg["Total Spent"]    = buyer_agg["Total_Spent"].apply(fmt_currency)
-        buyer_agg["Last Purchase"]  = pd.to_datetime(buyer_agg["Last_Purchase"], errors="coerce").dt.strftime("%Y-%m-%d")
-
-        cb5l, cb5r = st.columns([2, 1])
-
-        with cb5l:
-            show_repeat = st.checkbox("Show repeat buyers only", value=True)
-            display_df  = buyer_agg[buyer_agg["Orders"] > 1] if show_repeat else buyer_agg
-            display_cols = [c for c in ["Buyer User ID", "Name", "Orders", "Units",
-                                         "Total Spent", "Last Purchase", "Card Name", "Tier"]
-                            if c in display_df.columns]
-            st.dataframe(
-                display_df[display_cols].sort_values("Orders", ascending=False).reset_index(drop=True),
-                use_container_width=True,
-            )
-
-        with cb5r:
-            chart_caption("Buyer Tier Share")
-            tier_counts = buyer_agg["Tier"].value_counts().reset_index()
-            tier_counts.columns = ["Tier", "Buyers"]
-            fig = px.pie(tier_counts, names="Tier", values="Buyers", hole=0.4,
-                         color_discrete_sequence=CATEGORICAL_COLORS)
-            fig.update_traces(
-                hovertemplate="%{label}<br>Buyers: %{value}<br>%{percent}<extra></extra>",
-            )
-            fig = style_donut(fig, 320)
-            st.plotly_chart(fig, use_container_width=True)
-
-    # ===== SECTION 6: Coupon Effectiveness ===================================
-    section("Coupon Effectiveness")
-    if "Coupon Code" not in df.columns:
-        empty_chart_note()
-    else:
-        coupon_df    = df[df["Coupon Code"].notna() & (df["Coupon Code"] != "")].copy()
-        no_coupon_df = df[df["Coupon Code"].isna()  | (df["Coupon Code"] == "")].copy()
-
-        c6l, c6r = st.columns([2, 1])
-
-        with c6l:
-            if coupon_df.empty:
-                st.info("No coupon usage in selected period.")
-            else:
-                coupon_tbl = (
-                    coupon_df.groupby("Coupon Code")
-                    .agg(
-                        Uses=("Order ID", "nunique"),
-                        Total_Discounted=("Discount Amount", "sum") if "Discount Amount" in coupon_df.columns else ("Order ID", "nunique"),
-                        Avg_Net_Order=("Order Net",    "mean")    if "Order Net"     in coupon_df.columns else ("Order ID", "nunique"),
-                    )
-                    .reset_index()
-                )
-                coupon_tbl.columns = ["Coupon Code", "Uses", "Total Discounted", "Avg Net Order"]
-                coupon_tbl["Total Discounted"] = coupon_tbl["Total Discounted"].apply(fmt_currency)
-                coupon_tbl["Avg Net Order"]    = coupon_tbl["Avg Net Order"].apply(fmt_currency)
-                st.dataframe(coupon_tbl, use_container_width=True)
-
-        with c6r:
-            coupon_order_count    = coupon_df["Order ID"].nunique()    if "Order ID" in coupon_df.columns    else 0
-            no_coupon_order_count = no_coupon_df["Order ID"].nunique() if "Order ID" in no_coupon_df.columns else 0
-            pie_data = pd.DataFrame({
-                "Type":   ["With coupon", "Without coupon"],
-                "Orders": [coupon_order_count, no_coupon_order_count],
-            })
-            chart_caption("Order Share by Coupon Usage")
-            fig = px.pie(pie_data, names="Type", values="Orders", hole=0.4,
-                         color_discrete_sequence=CATEGORICAL_COLORS)
-            fig.update_traces(
-                hovertemplate="%{label}<br>Orders: %{value}<br>%{percent}<extra></extra>",
-            )
-            fig = style_donut(fig, 280)
-            st.plotly_chart(fig, use_container_width=True)
-
-            if "Order Net" in df.columns:
-                avg_with    = coupon_df["Order Net"].mean()    if not coupon_df.empty    else 0
-                avg_without = no_coupon_df["Order Net"].mean() if not no_coupon_df.empty else 0
-                st.metric("Avg net w/ coupon",    fmt_currency(avg_with))
-                st.metric("Avg net w/o coupon",   fmt_currency(avg_without))
+                if "Order Net" in df.columns:
+                    avg_with = coupon_df["Order Net"].mean() if not coupon_df.empty else 0
+                    avg_without = no_coupon_df["Order Net"].mean() if not no_coupon_df.empty else 0
+                    st.metric("Avg net w/ coupon", fmt_currency(avg_with))
+                    st.metric("Avg net w/o coupon", fmt_currency(avg_without))
 
     # ===== SECTION 8: Customer Segments ======================================
-    section("Customer Segments")
-    if "Buyer User ID" not in df.columns:
-        empty_chart_note()
-    else:
-        eligible_buyers = df[df["Buyer User ID"].notna()]["Buyer User ID"].nunique()
-        if eligible_buyers < 3:
-            st.info("Need at least 3 buyers with IDs to build customer clusters.")
-        else:
-            max_clusters = min(6, eligible_buyers)
-            cluster_count = st.slider("Number of segments", 3, max_clusters, min(4, max_clusters), key="cluster_count")
-            cluster_df, cluster_summary = build_buyer_clusters(df, cluster_count)
-
-            if cluster_df.empty:
-                empty_chart_note()
-            else:
-                seg_left, seg_right = st.columns([2, 1])
-
-                with seg_left:
-                    chart_caption("Buyer segments based on spend, orders, coupon usage, units, and primary state")
-                    fig = px.scatter(
-                        cluster_df,
-                        x="Total_Spent",
-                        y="Orders",
-                        color="Segment",
-                        size="Units",
-                        hover_data={
-                            "Name": True,
-                            "State": True,
-                            "Avg Order Value": ":.2f",
-                            "Coupon_Rate": ":.0%",
-                            "Total_Spent": ":.2f",
-                            "Units": True,
-                        },
-                        color_discrete_sequence=CATEGORICAL_COLORS,
-                    )
-                    fig = apply_chart_theme(fig, 360)
-                    fig.update_traces(marker=dict(line=dict(width=1, color="#0d1321")))
-                    fig.update_layout(xaxis_title="Total Spend", yaxis_title="Orders")
-                    st.plotly_chart(fig, use_container_width=True)
-
-                with seg_right:
-                    summary_display = cluster_summary.copy()
-                    summary_display["Avg_Spend"] = summary_display["Avg_Spend"].apply(fmt_currency)
-                    summary_display["Avg_AOV"] = summary_display["Avg_AOV"].apply(fmt_currency)
-                    summary_display["Avg_Coupon_Rate"] = summary_display["Avg_Coupon_Rate"].map(lambda val: f"{val:.0%}")
-                    summary_display["Avg_Orders"] = summary_display["Avg_Orders"].map(lambda val: f"{val:.1f}")
-                    st.dataframe(summary_display, use_container_width=True)
-
-    # ===== SECTION 9: Fulfillment Speed ======================================
-    section("Fulfillment Speed")
-    has_paid    = "Date Paid"    in df.columns
-    has_shipped = "Date Shipped" in df.columns
-
-    if not has_paid or not has_shipped:
-        empty_chart_note()
-    else:
-        ship_df = df[["Date Paid", "Date Shipped"]].dropna()
-        ship_df = ship_df.copy()
-        ship_df["Days to Ship"] = (
-            ship_df["Date Shipped"] - ship_df["Date Paid"]
-        ).dt.total_seconds() / 86400
-        ship_df = ship_df[ship_df["Days to Ship"] >= 0]
-
-        if ship_df.empty:
+    if "segments" in selected_section_set:
+        section("Customer Segments")
+        if "Buyer User ID" not in df.columns:
             empty_chart_note()
         else:
-            avg_days    = ship_df["Days to Ship"].mean()
-            median_days = ship_df["Days to Ship"].median()
-            same_day    = int((ship_df["Days to Ship"] == 0).sum())
+            eligible_buyers = df[df["Buyer User ID"].notna()]["Buyer User ID"].nunique()
+            if eligible_buyers < 3:
+                st.info("Need at least 3 buyers with IDs to build customer clusters.")
+            else:
+                max_clusters = min(6, eligible_buyers)
+                cluster_count = st.slider("Number of segments", 3, max_clusters, min(4, max_clusters), key="cluster_count")
+                cluster_df, cluster_summary = build_buyer_clusters(df, cluster_count)
 
-            c7m1, c7m2, c7m3 = st.columns(3)
-            c7m1.metric("Avg days to ship",    f"{avg_days:.1f}")
-            c7m2.metric("Median days to ship", f"{median_days:.1f}")
-            c7m3.metric("Same-day shipments",  f"{same_day:,}")
+                if cluster_df.empty:
+                    empty_chart_note()
+                else:
+                    seg_left, seg_right = st.columns([2, 1])
 
-            fig = px.histogram(
-                ship_df, x="Days to Ship",
-                nbins=15,
-                color_discrete_sequence=[PRIMARY],
-            )
-            fig = apply_chart_theme(fig, 320)
-            fig.update_layout(xaxis_title="Days to Ship", yaxis_title="Count")
-            st.plotly_chart(fig, use_container_width=True)
+                    with seg_left:
+                        chart_caption("Buyer segments based on spend, orders, coupon usage, units, and primary state")
+                        fig = px.scatter(
+                            cluster_df,
+                            x="Total_Spent",
+                            y="Orders",
+                            color="Segment",
+                            size="Units",
+                            hover_data={
+                                "Name": True,
+                                "State": True,
+                                "Avg Order Value": ":.2f",
+                                "Coupon_Rate": ":.0%",
+                                "Total_Spent": ":.2f",
+                                "Units": True,
+                            },
+                            color_discrete_sequence=CATEGORICAL_COLORS,
+                        )
+                        fig = apply_chart_theme(fig, 360)
+                        fig.update_traces(marker=dict(line=dict(width=1, color="#0d1321")))
+                        fig.update_layout(xaxis_title="Total Spend", yaxis_title="Orders")
+                        st.plotly_chart(fig, use_container_width=True)
+
+                    with seg_right:
+                        summary_display = cluster_summary.copy()
+                        summary_display["Avg_Spend"] = summary_display["Avg_Spend"].apply(fmt_currency)
+                        summary_display["Avg_AOV"] = summary_display["Avg_AOV"].apply(fmt_currency)
+                        summary_display["Avg_Coupon_Rate"] = summary_display["Avg_Coupon_Rate"].map(lambda val: f"{val:.0%}")
+                        summary_display["Avg_Orders"] = summary_display["Avg_Orders"].map(lambda val: f"{val:.1f}")
+                        st.dataframe(summary_display, use_container_width=True)
+
+    # ===== SECTION 9: Fulfillment Speed ======================================
+    if "fulfillment" in selected_section_set:
+        section("Fulfillment Speed")
+        has_paid = "Date Paid" in df.columns
+        has_shipped = "Date Shipped" in df.columns
+
+        if not has_paid or not has_shipped:
+            empty_chart_note()
+        else:
+            ship_df = df[["Date Paid", "Date Shipped"]].dropna()
+            ship_df = ship_df.copy()
+            ship_df["Days to Ship"] = (
+                ship_df["Date Shipped"] - ship_df["Date Paid"]
+            ).dt.total_seconds() / 86400
+            ship_df = ship_df[ship_df["Days to Ship"] >= 0]
+
+            if ship_df.empty:
+                empty_chart_note()
+            else:
+                avg_days = ship_df["Days to Ship"].mean()
+                median_days = ship_df["Days to Ship"].median()
+                same_day = int((ship_df["Days to Ship"] == 0).sum())
+
+                c7m1, c7m2, c7m3 = st.columns(3)
+                c7m1.metric("Avg days to ship", f"{avg_days:.1f}")
+                c7m2.metric("Median days to ship", f"{median_days:.1f}")
+                c7m3.metric("Same-day shipments", f"{same_day:,}")
+
+                fig = px.histogram(
+                    ship_df,
+                    x="Days to Ship",
+                    nbins=15,
+                    color_discrete_sequence=[PRIMARY],
+                )
+                fig = apply_chart_theme(fig, 320)
+                fig.update_layout(xaxis_title="Days to Ship", yaxis_title="Count")
+                st.plotly_chart(fig, use_container_width=True)
 
     # ===== SECTION 10: Order History =========================================
-    section("Order History")
-    history_df = build_order_history(df)
+    if "order_history" in selected_section_set:
+        section("Order History")
+        history_df = build_order_history(df)
 
-    if history_df.empty:
-        empty_chart_note()
-    else:
-        h1, h2, h3, h4 = st.columns([2, 1, 1, 1])
+        if history_df.empty:
+            empty_chart_note()
+        else:
+            h1, h2, h3, h4 = st.columns([2, 1, 1, 1])
 
-        search_text = h1.text_input(
-            "Search order, buyer, or item",
-            value="",
-            key="history_search",
-        )
-        coupon_filter = h2.selectbox(
-            "Coupon",
-            ["All", "With coupon", "Without coupon"],
-            key="history_coupon_filter",
-        )
-        sort_choice = h3.selectbox(
-            "Sort",
-            [
-                "Most recent to oldest",
-                "Oldest to most recent",
-                "Highest net to lowest net",
-                "Lowest net to highest net",
-            ],
-            index=0,
-            key="history_sort_choice",
-        )
-        max_rows = h4.selectbox(
-            "Rows",
-            [25, 50, 100, 250],
-            index=1,
-            key="history_row_count",
-        )
+            search_text = h1.text_input(
+                "Search order, buyer, or item",
+                value="",
+                key="history_search",
+            )
+            coupon_filter = h2.selectbox(
+                "Coupon",
+                ["All", "With coupon", "Without coupon"],
+                key="history_coupon_filter",
+            )
+            sort_choice = h3.selectbox(
+                "Sort",
+                [
+                    "Most recent to oldest",
+                    "Oldest to most recent",
+                    "Highest net to lowest net",
+                    "Lowest net to highest net",
+                ],
+                index=0,
+                key="history_sort_choice",
+            )
+            max_rows = h4.selectbox(
+                "Rows",
+                [25, 50, 100, 250],
+                index=1,
+                key="history_row_count",
+            )
 
-        filtered_history = history_df.copy()
+            filtered_history = history_df.copy()
 
-        if search_text.strip():
-            needle = search_text.strip().lower()
-            search_cols = [col for col in ["Order ID", "Buyer", "Items", "Styles"] if col in filtered_history.columns]
-            if search_cols:
-                haystack = (
-                    filtered_history[search_cols]
-                    .fillna("")
-                    .astype(str)
-                    .agg(" | ".join, axis=1)
-                    .str.lower()
-                )
-                filtered_history = filtered_history[haystack.str.contains(needle, na=False)]
+            if search_text.strip():
+                needle = search_text.strip().lower()
+                search_cols = [col for col in ["Order ID", "Buyer", "Items", "Styles"] if col in filtered_history.columns]
+                if search_cols:
+                    haystack = (
+                        filtered_history[search_cols]
+                        .fillna("")
+                        .astype(str)
+                        .agg(" | ".join, axis=1)
+                        .str.lower()
+                    )
+                    filtered_history = filtered_history[haystack.str.contains(needle, na=False)]
 
-        if coupon_filter != "All" and "Coupon Code" in filtered_history.columns:
-            has_coupon = filtered_history["Coupon Code"].fillna("").astype(str).str.strip().ne("")
-            if coupon_filter == "With coupon":
-                filtered_history = filtered_history[has_coupon]
-            else:
-                filtered_history = filtered_history[~has_coupon]
+            if coupon_filter != "All" and "Coupon Code" in filtered_history.columns:
+                has_coupon = filtered_history["Coupon Code"].fillna("").astype(str).str.strip().ne("")
+                if coupon_filter == "With coupon":
+                    filtered_history = filtered_history[has_coupon]
+                else:
+                    filtered_history = filtered_history[~has_coupon]
 
-        if sort_choice == "Most recent to oldest":
-            if "Sale Date" in filtered_history.columns:
-                filtered_history = filtered_history.sort_values("Sale Date", ascending=False, na_position="last")
-            else:
-                filtered_history = filtered_history.sort_values("Order ID", ascending=False)
-        elif sort_choice == "Oldest to most recent":
-            if "Sale Date" in filtered_history.columns:
-                filtered_history = filtered_history.sort_values("Sale Date", ascending=True, na_position="last")
-            else:
-                filtered_history = filtered_history.sort_values("Order ID", ascending=True)
-        elif sort_choice == "Highest net to lowest net" and "Order Net" in filtered_history.columns:
-            filtered_history = filtered_history.sort_values("Order Net", ascending=False, na_position="last")
-        elif sort_choice == "Lowest net to highest net" and "Order Net" in filtered_history.columns:
-            filtered_history = filtered_history.sort_values("Order Net", ascending=True, na_position="last")
+            if sort_choice == "Most recent to oldest":
+                if "Sale Date" in filtered_history.columns:
+                    filtered_history = filtered_history.sort_values("Sale Date", ascending=False, na_position="last")
+                else:
+                    filtered_history = filtered_history.sort_values("Order ID", ascending=False)
+            elif sort_choice == "Oldest to most recent":
+                if "Sale Date" in filtered_history.columns:
+                    filtered_history = filtered_history.sort_values("Sale Date", ascending=True, na_position="last")
+                else:
+                    filtered_history = filtered_history.sort_values("Order ID", ascending=True)
+            elif sort_choice == "Highest net to lowest net" and "Order Net" in filtered_history.columns:
+                filtered_history = filtered_history.sort_values("Order Net", ascending=False, na_position="last")
+            elif sort_choice == "Lowest net to highest net" and "Order Net" in filtered_history.columns:
+                filtered_history = filtered_history.sort_values("Order Net", ascending=True, na_position="last")
 
-        display = filtered_history.head(max_rows).copy()
-        st.caption(f"Showing {len(display):,} of {len(filtered_history):,} orders")
+            display = filtered_history.head(max_rows).copy()
+            st.caption(f"Showing {len(display):,} of {len(filtered_history):,} orders")
 
-        for dt_col in ["Sale Date", "Date Paid", "Date Shipped"]:
-            if dt_col in display.columns:
-                display[dt_col] = pd.to_datetime(display[dt_col], errors="coerce").dt.strftime("%Y-%m-%d")
+            for dt_col in ["Sale Date", "Date Paid", "Date Shipped"]:
+                if dt_col in display.columns:
+                    display[dt_col] = pd.to_datetime(display[dt_col], errors="coerce").dt.strftime("%Y-%m-%d")
 
-        for money_col in ["Order Total", "Order Net", "Shipping", "Sales Tax", "Discount Amount"]:
-            if money_col in display.columns:
-                display[money_col] = pd.to_numeric(display[money_col], errors="coerce").fillna(0).map(fmt_currency)
+            for money_col in ["Order Total", "Order Net", "Shipping", "Sales Tax", "Discount Amount"]:
+                if money_col in display.columns:
+                    display[money_col] = pd.to_numeric(display[money_col], errors="coerce").fillna(0).map(fmt_currency)
 
-        display_columns = [
-            "Sale Date",
-            "Order ID",
-            "Buyer",
-            "Items",
-            "Units",
-            "Order Total",
-            "Order Net",
-            "Coupon Code",
-            "Order Type",
-            "Payment Method",
-            "Ship State",
-            "Date Shipped",
-        ]
-        display_columns = [col for col in display_columns if col in display.columns]
-        st.dataframe(display[display_columns], use_container_width=True, height=360)
+            display_columns = [
+                "Sale Date",
+                "Order ID",
+                "Buyer",
+                "Items",
+                "Units",
+                "Order Total",
+                "Order Net",
+                "Coupon Code",
+                "Order Type",
+                "Payment Method",
+                "Ship State",
+                "Date Shipped",
+            ]
+            display_columns = [col for col in display_columns if col in display.columns]
+            st.dataframe(display[display_columns], use_container_width=True, height=360)
 
 
 if __name__ == "__main__":

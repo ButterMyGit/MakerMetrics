@@ -2,6 +2,8 @@
 
 A personal sales analytics dashboard built for Etsy shops. Drop in your Etsy CSV exports and get a live, filterable view of your orders, top products, buyers, geographic sales, forecasts, and more — all running locally or in Docker on your own machine.
 
+On first launch, a two-step onboarding flow lets you set the store name, upload an optional logo, and choose which dashboard sections to show. All of these can be changed later from the sidebar settings menu.
+
 If you want to understand the code or extend it, see [DEVELOPER_README.md](DEVELOPER_README.md).
 
 ---
@@ -35,7 +37,7 @@ This app uses **Firebase Firestore** as its database — it's free for personal 
 ### 1. Create a Firebase project
 
 1. Go to [console.firebase.google.com](https://console.firebase.google.com) and sign in with your Google account.
-2. Click **Add project**, give it a name (e.g. `theslabguy-dashboard`), and click through the setup. You can disable Google Analytics since you won't need it.
+2. Click **Add project**, give it a name (e.g. `etsy-sales-dashboard`), and click through the setup. You can disable Google Analytics since you won't need it.
 
 ### 2. Enable Firestore
 

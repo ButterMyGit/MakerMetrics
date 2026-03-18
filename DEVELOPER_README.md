@@ -29,6 +29,8 @@ etsy-data-dashboard/
 ├── Dockerfile                 # Shared image used by both services
 ├── docker-compose.yml         # dashboard + watcher as separate services
 ├── .env.example
+├── settings/                  # persisted onboarding/settings state + uploaded logo
+│   └── dashboard_settings.json
 ├── secrets/
 │   └── firebase.json          # Service account key — gitignored
 └── data/
@@ -61,6 +63,8 @@ On startup, processes any CSVs already sitting in the watch folder.
 ### app.py
 
 Reads the `sales` and `listings` Firestore collections on load, caches with `@st.cache_data(ttl=300)`, and computes all aggregates in memory. Sidebar uploads call the same cleaning/upsert logic as the watcher directly, without going through the file system.
+
+On first run, `app.py` shows a two-step onboarding flow and persists UI settings to `settings/dashboard_settings.json` (store name, optional logo path, selected visible sections, onboarding complete flag).
 
 ---
 

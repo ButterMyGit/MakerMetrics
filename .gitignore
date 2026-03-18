@@ -15,6 +15,10 @@ __pycache__/
 data/watch/*.csv
 data/watch/*.json
 data/watch/processed/
+Etsy*.csv
+
+# Local dashboard settings and uploaded logo
+settings/
 
 # macOS
 .DS_Store

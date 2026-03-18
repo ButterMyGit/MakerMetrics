@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: slabguy-dashboard
+    container_name: etsy-dashboard
     command: ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8501"]
     environment:
       FIREBASE_CREDENTIALS: /run/secrets
@@ -15,6 +15,7 @@ services:
       STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
     volumes:
       - ./data/watch:/app/data/watch
+      - ./settings:/app/settings
       - ./secrets:/run/secrets:ro
     ports:
       - "8501:8501"
@@ -24,7 +25,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: slabguy-watcher
+    container_name: etsy-watcher
     command: ["python", "watcher.py"]
     environment:
       FIREBASE_CREDENTIALS: /run/secrets

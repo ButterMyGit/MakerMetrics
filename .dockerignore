@@ -19,6 +19,7 @@ secrets/*
 !secrets/.gitkeep
 data/watch/*.csv
 data/watch/processed/*
+settings/*
 
 # OS noise
 .DS_Store

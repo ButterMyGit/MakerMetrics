@@ -188,33 +188,88 @@ st.markdown(
         box-shadow: 0 0 0 1px rgba(46, 117, 182, 0.35) !important;
         border-color: #2E75B6 !important;
     }}
-    [data-testid="stSidebar"] div[data-baseweb="select"] > div {{
+    [data-testid="stSidebar"] div[data-baseweb="select"] > div,
+    [data-testid="stMultiSelect"] div[data-baseweb="select"] > div {{
         border: 1px solid {UI_BORDER_COLOR} !important;
-        border-radius: 8px !important;
+        border-radius: 10px !important;
+        background: rgba(46, 117, 182, 0.08) !important;
+        min-height: 3rem !important;
+        padding: 0.2rem 0.35rem !important;
     }}
-    [data-testid="stSidebar"] div[data-baseweb="select"]:focus-within > div {{
+    [data-testid="stSidebar"] div[data-baseweb="select"] [role="combobox"],
+    [data-testid="stMultiSelect"] div[data-baseweb="select"] [role="combobox"] {{
+        gap: 0.35rem;
+        align-items: flex-start;
+    }}
+    [data-testid="stSidebar"] div[data-baseweb="select"] > div > div:first-child,
+    [data-testid="stMultiSelect"] div[data-baseweb="select"] > div > div:first-child {{
+        max-height: 8.6rem;
+        overflow-y: auto;
+        padding-right: 0.2rem;
+        scrollbar-width: thin;
+    }}
+    [data-testid="stSidebar"] div[data-baseweb="select"]:focus-within > div,
+    [data-testid="stMultiSelect"] div[data-baseweb="select"]:focus-within > div {{
         border-color: #2E75B6 !important;
         box-shadow: 0 0 0 1px rgba(46, 117, 182, 0.35) !important;
     }}
-    [data-testid="stSidebar"] div[data-baseweb="tag"] {{
+    [data-testid="stMultiSelect"] [data-baseweb="tag"] {{
         border: 1px solid {UI_BORDER_COLOR} !important;
-        border-radius: 999px !important;
-        background-color: rgba(46, 117, 182, 0.14) !important;
+        border-radius: 10px !important;
+        background-color: rgba(46, 117, 182, 0.24) !important;
+        padding: 0.22rem 0.34rem !important;
+        max-width: 100% !important;
+        min-height: 1.7rem !important;
+        align-items: center !important;
+        overflow: hidden !important;
     }}
-    [role="option"][aria-selected="true"] {{
-        background-color: rgba(46, 117, 182, 0.14) !important;
+    [data-testid="stMultiSelect"] [data-baseweb="tag"] > * {{
+        min-width: 0 !important;
+    }}
+    [data-testid="stMultiSelect"] [data-baseweb="tag"] span {{
+        color: var(--text-color) !important;
+        font-weight: 500;
+        font-size: 0.88rem !important;
+        line-height: 1.15 !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        display: block !important;
+        max-width: 100% !important;
+    }}
+    [data-testid="stMultiSelect"] [data-baseweb="tag"] svg {{
+        fill: var(--text-color) !important;
+        margin-top: 0 !important;
+        flex-shrink: 0 !important;
+    }}
+    [data-testid="stSidebar"] [role="option"][aria-selected="true"],
+    [data-testid="stMultiSelect"] [role="option"][aria-selected="true"] {{
+        background-color: rgba(46, 117, 182, 0.18) !important;
+        color: var(--text-color) !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {{
+        border: 1px dashed {UI_BORDER_COLOR} !important;
+        border-radius: 12px !important;
+        padding: 0.35rem !important;
+        background: rgba(46, 117, 182, 0.06) !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stFileUploaderDropzoneInstructions"],
+    [data-testid="stSidebar"] [data-testid="stFileUploader"] small,
+    [data-testid="stSidebar"] [data-testid="stFileUploader"] p {{
+        white-space: normal !important;
+        overflow-wrap: anywhere !important;
+        line-height: 1.25 !important;
     }}
     [data-testid="stSidebar"] div.stButton > button,
     [data-testid="stSidebar"] [data-testid="stFileUploader"] button {{
+        justify-content: flex-start;
+        text-align: left;
         white-space: nowrap !important;
         text-overflow: ellipsis;
         overflow: hidden;
-        font-size: clamp(0.68rem, 1.9vw, 0.86rem) !important;
-        padding-left: 0.55rem !important;
-        padding-right: 0.55rem !important;
-    }}
-    [data-testid="stSidebar"] .sidebar-upload-row-spacer {{
-        height: 1.95rem;
+        font-size: clamp(0.72rem, 1.8vw, 0.9rem) !important;
+        padding-left: 0.7rem !important;
+        padding-right: 0.7rem !important;
     }}
     .block-container {{ padding-top: 1.35rem; }}
     .kpi-card {{
@@ -929,6 +984,7 @@ def main():
                     "Sections to display",
                     options=list(SECTION_OPTIONS.keys()),
                     key="onboarding_section_labels",
+                    placeholder="Choose sections to display",
                 )
 
                 step2_col_l, step2_col_r = st.columns([1, 1])
@@ -991,40 +1047,42 @@ def main():
                 st.image(logo_path, width=220)
                 st.caption("Stored at original quality. Browser tabs use small favicon sizes, which can look softer.")
 
-            upload_col, remove_col = st.columns([3, 1], gap="small")
-            with upload_col:
-                settings_logo_upload = st.file_uploader(
-                    "Replace logo (optional)",
-                    type=["png", "jpg", "jpeg", "webp"],
-                    key="settings_logo_upload",
-                )
-            with remove_col:
-                st.markdown('<div class="sidebar-upload-row-spacer"></div>', unsafe_allow_html=True)
-                if st.button("Remove logo", use_container_width=True, key="settings_remove_logo"):
-                    for old_logo in APP_SETTINGS_DIR.glob("store_logo.*"):
-                        try:
-                            old_logo.unlink()
-                        except OSError:
-                            pass
+            settings_logo_upload = st.file_uploader(
+                "Replace logo (optional)",
+                type=["png", "jpg", "jpeg", "webp"],
+                key="settings_logo_upload",
+            )
+            if st.button(
+                "Remove logo",
+                use_container_width=True,
+                key="settings_remove_logo",
+                disabled=not has_logo,
+            ):
+                for old_logo in APP_SETTINGS_DIR.glob("store_logo.*"):
+                    try:
+                        old_logo.unlink()
+                    except OSError:
+                        pass
 
-                    save_app_settings(
-                        {
-                            "store_name": store_name,
-                            "logo_path": "",
-                            "selected_sections": section_keys_from_labels(
-                                st.session_state.get("settings_section_labels", list(SECTION_OPTIONS.keys()))
-                            ),
-                            "onboarding_complete": True,
-                        }
-                    )
-                    st.session_state["settings_menu_open"] = False
-                    st.cache_data.clear()
-                    st.rerun()
+                save_app_settings(
+                    {
+                        "store_name": store_name,
+                        "logo_path": "",
+                        "selected_sections": section_keys_from_labels(
+                            st.session_state.get("settings_section_labels", list(SECTION_OPTIONS.keys()))
+                        ),
+                        "onboarding_complete": True,
+                    }
+                )
+                st.session_state["settings_menu_open"] = False
+                st.cache_data.clear()
+                st.rerun()
 
             st.multiselect(
                 "Dashboard sections",
                 options=list(SECTION_OPTIONS.keys()),
                 key="settings_section_labels",
+                placeholder="Choose sections to display",
             )
             st.caption("These settings can be changed later at any time.")
 

@@ -145,9 +145,7 @@ THEME_GLOW_COLOR = "rgba(46,117,182,0.14)"
 THEME_GRID_COLOR = "rgba(120,120,120,0.20)"
 THEME_AXIS_LINE = "rgba(120,120,120,0.32)"
 THEME_MARKER_BORDER = "rgba(120,120,120,0.38)"
-SETUP_INPUT_BG = "#e8f7e8"
-SETUP_INPUT_BORDER = "#7dbd7d"
-SETUP_INPUT_TEXT = "#16351f"
+UI_BORDER_COLOR = "#7daecc"
 
 # ---------------------------------------------------------------------------
 # Global style
@@ -165,26 +163,33 @@ st.markdown(
     [data-testid="stSidebar"] {{ background-color: var(--secondary-background-color); }}
     [data-testid="stSidebar"] * {{ color: var(--text-color) !important; }}
     [data-testid="stSidebar"] div[data-baseweb="input"] {{
-        background-color: {SETUP_INPUT_BG} !important;
+        background-color: var(--secondary-background-color) !important;
+        border: 1px solid {UI_BORDER_COLOR} !important;
         border-radius: 8px;
     }}
+    [data-testid="stSidebar"] div[data-baseweb="input"]:focus-within {{
+        border-color: #2E75B6 !important;
+        box-shadow: 0 0 0 1px rgba(46, 117, 182, 0.35) !important;
+    }}
     [data-testid="stSidebar"] div[data-baseweb="input"] input {{
-        color: {SETUP_INPUT_TEXT} !important;
+        color: var(--text-color) !important;
+        caret-color: var(--text-color) !important;
     }}
     [data-testid="stTextInput"] div[data-baseweb="input"] {{
-        background-color: {SETUP_INPUT_BG} !important;
-        border: 1px solid {SETUP_INPUT_BORDER} !important;
+        background-color: var(--secondary-background-color) !important;
+        border: 1px solid {UI_BORDER_COLOR} !important;
         border-radius: 8px;
     }}
     [data-testid="stTextInput"] div[data-baseweb="input"] input {{
-        color: {SETUP_INPUT_TEXT} !important;
+        color: var(--text-color) !important;
+        caret-color: var(--text-color) !important;
     }}
     [data-testid="stTextInput"] div[data-baseweb="input"]:focus-within {{
-        box-shadow: 0 0 0 1px {SETUP_INPUT_BORDER} !important;
-        border-color: {SETUP_INPUT_BORDER} !important;
+        box-shadow: 0 0 0 1px rgba(46, 117, 182, 0.35) !important;
+        border-color: #2E75B6 !important;
     }}
     [data-testid="stSidebar"] div[data-baseweb="select"] > div {{
-        border: 1px solid #7daecc !important;
+        border: 1px solid {UI_BORDER_COLOR} !important;
         border-radius: 8px !important;
     }}
     [data-testid="stSidebar"] div[data-baseweb="select"]:focus-within > div {{
@@ -192,7 +197,7 @@ st.markdown(
         box-shadow: 0 0 0 1px rgba(46, 117, 182, 0.35) !important;
     }}
     [data-testid="stSidebar"] div[data-baseweb="tag"] {{
-        border: 1px solid #7daecc !important;
+        border: 1px solid {UI_BORDER_COLOR} !important;
         border-radius: 999px !important;
         background-color: rgba(46, 117, 182, 0.14) !important;
     }}
@@ -214,6 +219,7 @@ st.markdown(
     .block-container {{ padding-top: 1.35rem; }}
     .kpi-card {{
         background: var(--secondary-background-color);
+        border: 1px solid rgba(46, 117, 182, 0.42);
         border-left: 4px solid #2E75B6;
         border-radius: 10px;
         padding: 14px 18px;
@@ -423,6 +429,15 @@ def empty_chart_note():
 
 def chart_caption(text: str):
     st.markdown(f'<div class="chart-caption">{text}</div>', unsafe_allow_html=True)
+
+
+def render_credits():
+    year = date.today().year
+    st.divider()
+    st.caption(
+        f"© {year} • MIT License • Made by [ButterMyGit](https://github.com/ButterMyGit) • "
+        "Initially built for [TheSlabGuy](https://theslabguy.etsy.com)"
+    )
 
 
 def apply_chart_theme(fig: go.Figure, height: int, *, pie_like: bool = False) -> go.Figure:
@@ -1102,6 +1117,7 @@ def main():
 
     if df.empty:
         st.warning("No sales data found. Drop a CSV into data/watch/ to get started.")
+        render_credits()
         return
 
     if start_d and "Sale Date" in df.columns:
@@ -1352,18 +1368,18 @@ def main():
                 fig.update_traces(marker_line_color=THEME_MARKER_BORDER, marker_line_width=0.9)
                 fig.update_geos(
                     showcoastlines=True,
-                    coastlinecolor=THEME_AXIS_LINE,
+                    coastlinecolor=UI_BORDER_COLOR,
                     coastlinewidth=0.8,
                     showframe=True,
-                    framecolor=THEME_AXIS_LINE,
-                    framewidth=0.9,
+                    framecolor=UI_BORDER_COLOR,
+                    framewidth=1.2,
                     bgcolor="rgba(0,0,0,0)",
                     projection_type="albers usa",
                 )
                 fig.update_layout(
                     coloraxis_colorbar=dict(
                         outlinewidth=1,
-                        outlinecolor=THEME_AXIS_LINE,
+                        outlinecolor=UI_BORDER_COLOR,
                     )
                 )
                 st.plotly_chart(fig, use_container_width=True)
@@ -1759,6 +1775,8 @@ def main():
             ]
             display_columns = [col for col in display_columns if col in display.columns]
             st.dataframe(display[display_columns], use_container_width=True, height=360)
+
+    render_credits()
 
 
 if __name__ == "__main__":

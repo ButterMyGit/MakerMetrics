@@ -1,5 +1,8 @@
 services:
   dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: buttermygit/etsy-sales-dashboard:dashboard
     container_name: etsy-dashboard
     command: ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8501"]
@@ -20,6 +23,9 @@ services:
     restart: unless-stopped
 
   watcher:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: buttermygit/etsy-sales-dashboard:watcher
     container_name: etsy-watcher
     command: ["python", "watcher.py"]

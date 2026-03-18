@@ -186,7 +186,9 @@ By default, compose pulls prebuilt images from Docker Hub:
 - `buttermygit/etsy-sales-dashboard:dashboard`
 - `buttermygit/etsy-sales-dashboard:watcher`
 
-The `Dockerfile` is still used for producing those images during publish/release workflows.
+Each service also includes a local `build` definition (same root `Dockerfile`) plus an `image` tag. This enables:
+- `docker compose up` to run using pulled Hub images in normal usage
+- `docker compose build` to rebuild locally and tag directly to publish-ready image names
 
 Volume mounts:
 - `./data/watch` → `/app/data/watch`
@@ -196,6 +198,7 @@ Volume mounts:
 ```bash
 docker compose pull              # fetch/update images
 docker compose up                # start both
+docker compose build             # rebuild both images from local source
 docker compose up dashboard      # dashboard only
 docker compose up watcher        # watcher only
 docker compose logs -f watcher   # tail watcher logs

@@ -77,6 +77,14 @@ Then open [http://localhost:8501](http://localhost:8501).
 
 That's it! Both services (dashboard and watcher) start together. The compose file is configured to pull prebuilt Hub images: `buttermygit/etsy-sales-dashboard:dashboard` and `buttermygit/etsy-sales-dashboard:watcher`, so local image builds are not required for normal use.
 
+If you want to rebuild locally from source (for development or before publishing), run:
+
+```bash
+docker compose build
+```
+
+Because the compose services include both `build` and `image`, local builds are automatically tagged with the same Hub image names, so you can push without retagging.
+
 To stop services, press `Ctrl+C` or run `docker compose down`. If you ever want to get rid of this project, just delete the folder and the Docker containers will be removed. Your Firebase database will still exist in Google's cloud if you want to come back to it later. Providing the same `.json` credentials file will reconnect it to the same database.
 
 ### Option B — Local Python (no Docker)

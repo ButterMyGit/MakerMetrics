@@ -408,6 +408,14 @@ def _slugify(value: str) -> str:
 
 
 def _listing_doc_id(row: dict) -> str | None:
+    listing_id = row.get("Listing ID")
+    if listing_id:
+        cleaned_listing_id = _clean_id(listing_id)
+        if cleaned_listing_id:
+            listing_slug = _slugify(str(cleaned_listing_id).strip())
+            if listing_slug:
+                return f"listing-id-{listing_slug}"
+
     sku = row.get("SKU")
     if sku:
         sku_slug = _slugify(str(sku).strip())
@@ -432,6 +440,8 @@ def _listing_doc_id(row: dict) -> str | None:
 
 def clean_listings(df: pd.DataFrame) -> pd.DataFrame:
     rename_map = {
+        "LISTING_ID": "Listing ID",
+        "LISTING ID": "Listing ID",
         "TITLE": "Listing Title",
         "DESCRIPTION": "Listing Description",
         "PRICE": "Listing Price",
@@ -459,6 +469,9 @@ def clean_listings(df: pd.DataFrame) -> pd.DataFrame:
     if "Available Quantity" in df.columns:
         qty = pd.to_numeric(df["Available Quantity"], errors="coerce").fillna(0)
         df["Available Quantity"] = qty.astype(int)
+
+    if "Listing ID" in df.columns:
+        df["Listing ID"] = df["Listing ID"].map(_clean_id)
 
     if "Listing Title" in df.columns:
         parts = df["Listing Title"].str.split("|", n=1, expand=True)

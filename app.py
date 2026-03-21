@@ -486,6 +486,12 @@ def chart_caption(text: str):
     st.markdown(f'<div class="chart-caption">{text}</div>', unsafe_allow_html=True)
 
 
+def dataframe_with_one_index(df: pd.DataFrame, **kwargs):
+    display_df = df.copy()
+    display_df.index = pd.RangeIndex(start=1, stop=len(display_df) + 1, step=1)
+    st.dataframe(display_df, **kwargs)
+
+
 def render_credits():
     year = date.today().year
     st.divider()
@@ -594,6 +600,7 @@ def build_order_history(df: pd.DataFrame) -> pd.DataFrame:
     order_base = get_order_level_df(working)
     base_cols = [
         "Order ID",
+        "Transaction ID",
         "Sale Date",
         "Date Paid",
         "Date Shipped",
@@ -606,6 +613,7 @@ def build_order_history(df: pd.DataFrame) -> pd.DataFrame:
         "Ship Country",
         "Coupon Code",
         "Order Total",
+        "Card Processing Fees",
         "Order Net",
         "Shipping",
         "Sales Tax",
@@ -692,16 +700,15 @@ def build_order_forecast(df: pd.DataFrame, months_ahead: int) -> tuple[pd.Series
 @st.cache_data(ttl=900)
 def build_item_forecast(
     sales_df: pd.DataFrame,
-    listings_df: pd.DataFrame,
     months_ahead: int,
-) -> tuple[pd.DataFrame, list[str], int]:
+) -> tuple[pd.DataFrame, list[str]]:
     required_cols = {"Sale Date", "Quantity"}
     if sales_df.empty or not required_cols.issubset(sales_df.columns):
-        return pd.DataFrame(), [], 0
+        return pd.DataFrame(), []
 
     working = sales_df.dropna(subset=["Sale Date"]).copy()
     if working.empty:
-        return pd.DataFrame(), [], 0
+        return pd.DataFrame(), []
 
     if "Card Name" not in working.columns:
         if "Item Name" in working.columns:
@@ -735,28 +742,9 @@ def build_item_forecast(
     month_periods = pd.period_range(start=forecast_start.to_period("M"), periods=months_ahead, freq="M")
     month_labels = [str(period) for period in month_periods]
 
-    listing_names: set[str] = set()
-    if not listings_df.empty:
-        listing_col = None
-        for candidate in ["Card Name", "Listing Title", "TITLE"]:
-            if candidate in listings_df.columns:
-                listing_col = candidate
-                break
-        if listing_col:
-            listing_names = set(
-                listings_df[listing_col]
-                .fillna("")
-                .astype(str)
-                .str.split("|", n=1)
-                .str[0]
-                .str.strip()
-                .replace("", "Unknown Item")
-                .tolist()
-            )
-
-    product_universe = sorted(set(daily_by_item["Card Name"]).union(listing_names))
+    product_universe = sorted(set(daily_by_item["Card Name"]))
     if not product_universe:
-        return pd.DataFrame(), [], 0
+        return pd.DataFrame(), []
 
     horizon_days = max(35, months_ahead * 35)
     forecast_index = pd.date_range(forecast_start, periods=horizon_days, freq="D")
@@ -798,26 +786,22 @@ def build_item_forecast(
 
         row = {
             "Card Name": card,
-            "Historical Units (90d)": round(float(series.tail(90).sum()), 1),
-            "In Active Listings": "Yes" if card in listing_names else "No",
+            "Historical Units (90d)": int(float(series.tail(90).sum())),
         }
-        forecast_total = 0.0
+        forecast_total = 0
         for period in month_periods:
             value = float(monthly.get(period, 0.0))
-            row[str(period)] = round(value, 1)
-            forecast_total += value
-        row["Forecast Units"] = round(forecast_total, 1)
+            units = max(int(value), 0)
+            row[str(period)] = units
+            forecast_total += units
+        row["Forecast Units"] = forecast_total
         rows.append(row)
 
     result = pd.DataFrame(rows).sort_values(
         ["Forecast Units", "Historical Units (90d)"],
         ascending=[False, False],
     ).reset_index(drop=True)
-
-    listing_no_sales = int(
-        ((result["In Active Listings"] == "Yes") & (result["Historical Units (90d)"] <= 0)).sum()
-    )
-    return result, month_labels, listing_no_sales
+    return result, month_labels
 
 
 @st.cache_data(ttl=900)
@@ -1023,7 +1007,6 @@ def main():
 
     # ---- Load data ---------------------------------------------------------
     df_all, load_time = load_data()
-    listings_all = load_listings_data()
 
     # ---- Sidebar -----------------------------------------------------------
     with st.sidebar:
@@ -1441,7 +1424,7 @@ def main():
                     )
                 )
                 st.plotly_chart(fig, use_container_width=True)
-                st.dataframe(
+                dataframe_with_one_index(
                     state_agg.sort_values(map_met, ascending=False).reset_index(drop=True),
                     use_container_width=True,
                 )
@@ -1489,10 +1472,18 @@ def main():
                     total_horizon_orders = forecast_monthly["Projected Orders"].sum()
                     st.metric("Next month forecast", f"{next_month_orders:.1f}")
                     st.metric(f"Next {forecast_months} months", f"{total_horizon_orders:.1f}")
-                    st.dataframe(forecast_monthly, use_container_width=True)
+                    dataframe_with_one_index(forecast_monthly, use_container_width=True)
 
         st.markdown("#### Item Unit Forecast")
-        item_forecast_df, month_cols, listing_no_sales = build_item_forecast(df, listings_all, forecast_months)
+        item_forecast_df, month_cols = build_item_forecast(df, forecast_months)
+
+        if month_cols:
+            forecast_start = pd.Period(month_cols[0], freq="M").start_time.date()
+            forecast_end = pd.Period(month_cols[-1], freq="M").end_time.date()
+            st.caption(
+                f"Forecast window: {forecast_start} to {forecast_end} ({forecast_months} month"
+                f"{'s' if forecast_months != 1 else ''})."
+            )
 
         if item_forecast_df.empty:
             st.info("Not enough data to build per-item forecasts yet.")
@@ -1509,7 +1500,6 @@ def main():
                     orientation="h",
                     hover_data={
                         "Historical Units (90d)": True,
-                        "In Active Listings": True,
                     },
                     color_discrete_sequence=[SECONDARY],
                 )
@@ -1519,19 +1509,17 @@ def main():
 
             with it_right:
                 st.metric("Forecasted items", f"{len(item_forecast_df):,}")
-                st.metric("Listings with no recent sales", f"{listing_no_sales:,}")
                 if month_cols:
                     month_one_units = item_forecast_df[month_cols[0]].sum()
-                    st.metric(f"{month_cols[0]} units", f"{month_one_units:.1f}")
+                    st.metric(f"{month_cols[0]} units", f"{int(month_one_units):,}")
 
             display_cols = [
                 "Card Name",
                 "Historical Units (90d)",
                 *month_cols,
                 "Forecast Units",
-                "In Active Listings",
             ]
-            st.dataframe(item_forecast_df[display_cols], use_container_width=True, height=340)
+            dataframe_with_one_index(item_forecast_df[display_cols], use_container_width=True, height=340)
 
     # ===== SECTION 6: Repeat Buyers ==========================================
     if "buyer_analysis" in selected_section_set:
@@ -1575,7 +1563,7 @@ def main():
                 display_cols = [c for c in ["Buyer User ID", "Name", "Orders", "Units",
                                              "Total Spent", "Last Purchase", "Card Name", "Tier"]
                                 if c in display_df.columns]
-                st.dataframe(
+                dataframe_with_one_index(
                     display_df[display_cols].sort_values("Orders", ascending=False).reset_index(drop=True),
                     use_container_width=True,
                 )
@@ -1619,7 +1607,7 @@ def main():
                     coupon_tbl.columns = ["Coupon Code", "Uses", "Total Discounted", "Avg Net Order"]
                     coupon_tbl["Total Discounted"] = coupon_tbl["Total Discounted"].apply(fmt_currency)
                     coupon_tbl["Avg Net Order"] = coupon_tbl["Avg Net Order"].apply(fmt_currency)
-                    st.dataframe(coupon_tbl, use_container_width=True)
+                    dataframe_with_one_index(coupon_tbl, use_container_width=True)
 
             with c6r:
                 coupon_order_count = coupon_df["Order ID"].nunique() if "Order ID" in coupon_df.columns else 0
@@ -1691,7 +1679,7 @@ def main():
                         summary_display["Avg_AOV"] = summary_display["Avg_AOV"].apply(fmt_currency)
                         summary_display["Avg_Coupon_Rate"] = summary_display["Avg_Coupon_Rate"].map(lambda val: f"{val:.0%}")
                         summary_display["Avg_Orders"] = summary_display["Avg_Orders"].map(lambda val: f"{val:.1f}")
-                        st.dataframe(summary_display, use_container_width=True)
+                        dataframe_with_one_index(summary_display, use_container_width=True)
 
     # ===== SECTION 9: Fulfillment Speed ======================================
     if "fulfillment" in selected_section_set:
@@ -1773,7 +1761,11 @@ def main():
 
             if search_text.strip():
                 needle = search_text.strip().lower()
-                search_cols = [col for col in ["Order ID", "Buyer", "Items", "Styles"] if col in filtered_history.columns]
+                search_cols = [
+                    col
+                    for col in ["Transaction ID", "Order ID", "Buyer", "Items", "Styles"]
+                    if col in filtered_history.columns
+                ]
                 if search_cols:
                     haystack = (
                         filtered_history[search_cols]
@@ -1809,30 +1801,65 @@ def main():
             display = filtered_history.head(max_rows).copy()
             st.caption(f"Showing {len(display):,} of {len(filtered_history):,} orders")
 
+            if "Order Net" in display.columns and "Shipping" in display.columns:
+                display["Earnings"] = (
+                    pd.to_numeric(display["Order Net"], errors="coerce").fillna(0)
+                    - pd.to_numeric(display["Shipping"], errors="coerce").fillna(0)
+                )
+            elif {
+                "Order Total",
+                "Shipping",
+                "Card Processing Fees",
+            }.issubset(display.columns):
+                display["Earnings"] = (
+                    pd.to_numeric(display["Order Total"], errors="coerce").fillna(0)
+                    - pd.to_numeric(display["Shipping"], errors="coerce").fillna(0)
+                    - pd.to_numeric(display["Card Processing Fees"], errors="coerce").fillna(0)
+                )
+            elif {"Order Total", "Shipping"}.issubset(display.columns):
+                display["Earnings"] = (
+                    pd.to_numeric(display["Order Total"], errors="coerce").fillna(0)
+                    - pd.to_numeric(display["Shipping"], errors="coerce").fillna(0)
+                )
+
             for dt_col in ["Sale Date", "Date Paid", "Date Shipped"]:
                 if dt_col in display.columns:
                     display[dt_col] = pd.to_datetime(display[dt_col], errors="coerce").dt.strftime("%Y-%m-%d")
 
-            for money_col in ["Order Total", "Order Net", "Shipping", "Sales Tax", "Discount Amount"]:
+            for money_col in [
+                "Order Total",
+                "Card Processing Fees",
+                "Order Net",
+                "Earnings",
+                "Shipping",
+                "Sales Tax",
+                "Discount Amount",
+            ]:
                 if money_col in display.columns:
                     display[money_col] = pd.to_numeric(display[money_col], errors="coerce").fillna(0).map(fmt_currency)
 
+            st.caption("Order Total = sticker price - discount + shipping")
+            st.caption("Order Net = sticker price - discount + shipping - card processing fee")
+            st.caption("Earnings = Order Net - shipping (shipping reimburses postage)")
+
             display_columns = [
                 "Sale Date",
-                "Order ID",
+                "Transaction ID",
                 "Buyer",
                 "Items",
                 "Units",
                 "Order Total",
                 "Order Net",
+                "Earnings",
                 "Coupon Code",
                 "Order Type",
                 "Payment Method",
+                "Order ID",
                 "Ship State",
                 "Date Shipped",
             ]
             display_columns = [col for col in display_columns if col in display.columns]
-            st.dataframe(display[display_columns], use_container_width=True, height=360)
+            dataframe_with_one_index(display[display_columns], use_container_width=True, height=360)
 
     render_credits()
 

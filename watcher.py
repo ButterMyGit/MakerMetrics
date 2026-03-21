@@ -148,6 +148,22 @@ _ORDERS_DROP_COLS = [
 ]
 
 def merge_items_orders(items: pd.DataFrame, orders: pd.DataFrame) -> pd.DataFrame:
+    if "Order ID" not in items.columns or "Order ID" not in orders.columns:
+        log.warning(
+            "Cannot merge items+orders reliably — missing Order ID column(s). "
+            "items_has_order_id=%s orders_has_order_id=%s",
+            "Order ID" in items.columns,
+            "Order ID" in orders.columns,
+        )
+        return items
+
+    # Normalize keys before joining so IDs like "12345.0" and "12345" match.
+    items["Order ID"] = items["Order ID"].map(_clean_id)
+    orders["Order ID"] = orders["Order ID"].map(_clean_id)
+
+    # Orders export should be one row per order; enforce this to avoid fan-out joins.
+    orders = orders.dropna(subset=["Order ID"]).drop_duplicates(subset=["Order ID"], keep="first")
+
     items = items.rename(columns={
         "Buyer":           "Buyer Username",
         "Order Shipping":  "Shipping",
@@ -158,11 +174,49 @@ def merge_items_orders(items: pd.DataFrame, orders: pd.DataFrame) -> pd.DataFram
     orders = orders.rename(columns={"Buyer": "_orders_display"})
     drop = [c for c in _ORDERS_DROP_COLS if c in orders.columns]
     orders = orders.drop(columns=drop)
-    merged = items.merge(orders, on="Order ID", how="left")
+
+    merged = items.merge(orders, on="Order ID", how="left", suffixes=("", "_orders"), indicator=True)
+
+    # Prefer order-level metrics from the SoldOrders file when available.
+    order_priority_cols = [
+        "Order Value",
+        "Order Total",
+        "Card Processing Fees",
+        "Order Net",
+        "Adjusted Order Total",
+        "Adjusted Card Processing Fees",
+        "Adjusted Net Order Amount",
+        "Date Paid",
+    ]
+    for col in order_priority_cols:
+        orders_col = f"{col}_orders"
+        if orders_col in merged.columns:
+            if col in merged.columns:
+                merged[col] = merged[orders_col].combine_first(merged[col])
+            else:
+                merged[col] = merged[orders_col]
+            merged.drop(columns=[orders_col], inplace=True)
+
     if "Full Name" in merged.columns and "_orders_display" in merged.columns:
         merged["Full Name"] = merged["Full Name"].fillna(merged["_orders_display"])
     if "_orders_display" in merged.columns:
         merged.drop(columns=["_orders_display"], inplace=True)
+
+    # Drop any remaining orders-suffixed duplicates after explicit coalescing.
+    remaining_orders_cols = [c for c in merged.columns if c.endswith("_orders")]
+    if remaining_orders_cols:
+        merged.drop(columns=remaining_orders_cols, inplace=True)
+
+    unmatched = int((merged["_merge"] == "left_only").sum())
+    if unmatched:
+        log.warning(
+            "Merged items+orders with %d unmatched item rows out of %d. "
+            "Check Order ID formatting in source files.",
+            unmatched,
+            len(merged),
+        )
+    merged.drop(columns=["_merge"], inplace=True)
+
     return merged
 
 
@@ -240,7 +294,16 @@ def _parse_date(val):
 def _clean_id(val):
     if pd.isna(val):
         return None
-    s = str(val).strip().split(".")[0].strip()
+
+    s = str(val).strip()
+    if not s:
+        return None
+
+    # Etsy exports sometimes include # prefixes or numeric IDs rendered as xxxxx.0
+    s = s.lstrip("#").strip()
+    if re.fullmatch(r"\d+\.0+", s):
+        s = s.split(".", 1)[0]
+
     return s if s else None
 
 

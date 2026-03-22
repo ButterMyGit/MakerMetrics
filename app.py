@@ -786,7 +786,7 @@ def build_item_forecast(
 
         row = {
             "Card Name": card,
-            "Historical Units (90d)": int(float(series.tail(90).sum())),
+            "Historical Units": int(float(series.sum())),
         }
         forecast_total = 0
         for period in month_periods:
@@ -798,7 +798,7 @@ def build_item_forecast(
         rows.append(row)
 
     result = pd.DataFrame(rows).sort_values(
-        ["Forecast Units", "Historical Units (90d)"],
+        ["Forecast Units", "Historical Units"],
         ascending=[False, False],
     ).reset_index(drop=True)
     return result, month_labels
@@ -1434,11 +1434,46 @@ def main():
         section("Sales Projection")
         forecast_months = st.slider("Forecast horizon (months)", 1, 6, 3, key="forecast_months")
 
+        forecast_df = df.copy()
+        forecast_order_df = get_order_level_df(forecast_df)
+
+        if "Sale Date" in forecast_df.columns:
+            sale_dates = pd.to_datetime(forecast_df["Sale Date"], errors="coerce").dropna()
+            if not sale_dates.empty:
+                start_default = sale_dates.dt.date.min()
+                today_date = date.today()
+                end_default = today_date if today_date >= start_default else start_default
+                max_picker_date = end_default if end_default >= today_date else today_date
+
+                selected_range = st.date_input(
+                    "Historical data range",
+                    value=(start_default, end_default),
+                    min_value=start_default,
+                    max_value=max_picker_date,
+                    key="projection_history_range",
+                )
+
+                if isinstance(selected_range, (tuple, list)) and len(selected_range) == 2:
+                    hist_start, hist_end = selected_range
+                else:
+                    hist_start = selected_range
+                    hist_end = end_default
+
+                if hist_start > hist_end:
+                    hist_start, hist_end = hist_end, hist_start
+
+                forecast_df = forecast_df[
+                    (forecast_df["Sale Date"].dt.date >= hist_start)
+                    & (forecast_df["Sale Date"].dt.date <= hist_end)
+                ]
+                forecast_order_df = get_order_level_df(forecast_df)
+                st.caption(f"Historical range used for forecasting: {hist_start} to {hist_end}")
+
         st.markdown("#### Order Forecast")
-        if order_df.empty or "Sale Date" not in order_df.columns or "Order ID" not in order_df.columns:
+        if forecast_order_df.empty or "Sale Date" not in forecast_order_df.columns or "Order ID" not in forecast_order_df.columns:
             empty_chart_note()
         else:
-            actual_daily, forecast_daily, forecast_monthly, model_name = build_order_forecast(df, forecast_months)
+            actual_daily, forecast_daily, forecast_monthly, model_name = build_order_forecast(forecast_df, forecast_months)
 
             if actual_daily.empty or forecast_monthly.empty:
                 empty_chart_note()
@@ -1447,11 +1482,10 @@ def main():
 
                 with fp_left:
                     chart_caption(f"Daily orders forecast using {model_name}")
-                    actual_window = actual_daily.tail(90)
                     fig = go.Figure()
                     fig.add_scatter(
-                        x=actual_window.index,
-                        y=actual_window.values,
+                        x=actual_daily.index,
+                        y=actual_daily.values,
                         mode="lines",
                         name="Actual Orders",
                         line=dict(color=PRIMARY, width=2),
@@ -1475,7 +1509,7 @@ def main():
                     dataframe_with_one_index(forecast_monthly, use_container_width=True)
 
         st.markdown("#### Item Unit Forecast")
-        item_forecast_df, month_cols = build_item_forecast(df, forecast_months)
+        item_forecast_df, month_cols = build_item_forecast(forecast_df, forecast_months)
 
         if month_cols:
             forecast_start = pd.Period(month_cols[0], freq="M").start_time.date()
@@ -1499,7 +1533,7 @@ def main():
                     y="Card Name",
                     orientation="h",
                     hover_data={
-                        "Historical Units (90d)": True,
+                        "Historical Units": True,
                     },
                     color_discrete_sequence=[SECONDARY],
                 )
@@ -1515,7 +1549,7 @@ def main():
 
             display_cols = [
                 "Card Name",
-                "Historical Units (90d)",
+                "Historical Units",
                 *month_cols,
                 "Forecast Units",
             ]

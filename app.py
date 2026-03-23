@@ -201,6 +201,13 @@ st.markdown(
         gap: 0.35rem;
         align-items: flex-start;
     }}
+    [data-testid="stSidebar"] div[data-baseweb="select"] input,
+    [data-testid="stMultiSelect"] div[data-baseweb="select"] input,
+    [data-testid="stSidebar"] div[data-baseweb="select"] [role="combobox"],
+    [data-testid="stMultiSelect"] div[data-baseweb="select"] [role="combobox"] {{
+        color: var(--text-color) !important;
+        caret-color: var(--text-color) !important;
+    }}
     [data-testid="stSidebar"] div[data-baseweb="select"] > div > div:first-child,
     [data-testid="stMultiSelect"] div[data-baseweb="select"] > div > div:first-child {{
         max-height: 8.6rem;
@@ -213,6 +220,7 @@ st.markdown(
         border-color: #2E75B6 !important;
         box-shadow: 0 0 0 1px rgba(46, 117, 182, 0.35) !important;
     }}
+    [data-testid="stSidebar"] [data-baseweb="tag"],
     [data-testid="stMultiSelect"] [data-baseweb="tag"] {{
         border: 1px solid {UI_BORDER_COLOR} !important;
         border-radius: 10px !important;
@@ -222,10 +230,18 @@ st.markdown(
         min-height: 1.7rem !important;
         align-items: center !important;
         overflow: hidden !important;
+        color: var(--text-color) !important;
     }}
+    [data-testid="stSidebar"] [data-baseweb="tag"] > *,
     [data-testid="stMultiSelect"] [data-baseweb="tag"] > * {{
         min-width: 0 !important;
     }}
+    [data-testid="stSidebar"] [data-baseweb="tag"] *,
+    [data-testid="stMultiSelect"] [data-baseweb="tag"] * {{
+        color: var(--text-color) !important;
+        fill: var(--text-color) !important;
+    }}
+    [data-testid="stSidebar"] [data-baseweb="tag"] span,
     [data-testid="stMultiSelect"] [data-baseweb="tag"] span {{
         color: var(--text-color) !important;
         font-weight: 500;
@@ -237,6 +253,7 @@ st.markdown(
         display: block !important;
         max-width: 100% !important;
     }}
+    [data-testid="stSidebar"] [data-baseweb="tag"] svg,
     [data-testid="stMultiSelect"] [data-baseweb="tag"] svg {{
         fill: var(--text-color) !important;
         margin-top: 0 !important;
@@ -245,6 +262,17 @@ st.markdown(
     [data-testid="stSidebar"] [role="option"][aria-selected="true"],
     [data-testid="stMultiSelect"] [role="option"][aria-selected="true"] {{
         background-color: rgba(46, 117, 182, 0.18) !important;
+        color: var(--text-color) !important;
+    }}
+    div[data-baseweb="popover"] [role="option"],
+    div[data-baseweb="popover"] [role="option"] * {{
+        color: var(--text-color) !important;
+    }}
+    div[data-baseweb="popover"] [role="option"][aria-selected="true"] {{
+        background-color: rgba(46, 117, 182, 0.18) !important;
+        color: var(--text-color) !important;
+    }}
+    div[data-baseweb="popover"] [role="option"][aria-selected="true"] * {{
         color: var(--text-color) !important;
     }}
     [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {{
@@ -653,7 +681,81 @@ def build_order_history(df: pd.DataFrame) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=900)
-def build_order_forecast(df: pd.DataFrame, months_ahead: int) -> tuple[pd.Series, pd.Series, pd.DataFrame, str]:
+def generate_forecast(
+    df: pd.DataFrame,
+    sales_frequency_type: str,
+    forecast_horizon_months: int = 3,
+) -> pd.Series:
+    order_df = get_order_level_df(df)
+    if order_df.empty or "Sale Date" not in order_df.columns or "Order ID" not in order_df.columns:
+        return pd.Series(dtype=float)
+
+    working = order_df.dropna(subset=["Sale Date"]).copy()
+    if working.empty:
+        return pd.Series(dtype=float)
+
+    working["Day"] = working["Sale Date"].dt.normalize()
+    base_series = working.groupby("Day")["Order ID"].nunique().sort_index().astype(float)
+    full_daily_index = pd.date_range(base_series.index.min(), base_series.index.max(), freq="D")
+    base_series = base_series.reindex(full_daily_index, fill_value=0.0)
+
+    if sales_frequency_type == "Intermittent (Sparse sales)":
+        resampled = base_series.resample("W-MON").sum().fillna(0.0)
+        seasonal_periods = 52
+        forecast_steps = max(1, forecast_horizon_months * 4)
+        forecast_freq = "W-MON"
+    else:
+        resampled = base_series.resample("D").sum().fillna(0.0)
+        seasonal_periods = 7
+        forecast_steps = max(1, forecast_horizon_months * 30)
+        forecast_freq = "D"
+
+    if resampled.empty:
+        return pd.Series(dtype=float)
+
+    forecast_index = pd.date_range(
+        resampled.index.max() + pd.tseries.frequencies.to_offset(forecast_freq),
+        periods=forecast_steps,
+        freq=forecast_freq,
+    )
+
+    if resampled.nunique() <= 1:
+        baseline = float(resampled.iloc[-1]) if len(resampled) else 0.0
+        return pd.Series(baseline, index=forecast_index).fillna(0.0)
+
+    try:
+        if len(resampled) < (2 * seasonal_periods):
+            raise ValueError("Not enough history for seasonal model")
+        fit = ExponentialSmoothing(
+            resampled,
+            trend="add",
+            seasonal="add",
+            seasonal_periods=seasonal_periods,
+            initialization_method="estimated",
+        ).fit(optimized=True)
+        forecast = fit.forecast(forecast_steps)
+    except Exception:
+        try:
+            fit = ExponentialSmoothing(
+                resampled,
+                trend="add",
+                seasonal=None,
+                initialization_method="estimated",
+            ).fit(optimized=True)
+            forecast = fit.forecast(forecast_steps)
+        except Exception:
+            baseline = float(resampled.tail(min(8, len(resampled))).mean())
+            forecast = pd.Series(baseline, index=forecast_index)
+
+    return pd.Series(forecast, index=forecast_index).fillna(0.0).clip(lower=0)
+
+
+@st.cache_data(ttl=900)
+def build_order_forecast(
+    df: pd.DataFrame,
+    months_ahead: int,
+    sales_frequency_type: str,
+) -> tuple[pd.Series, pd.Series, pd.DataFrame, str]:
     order_df = get_order_level_df(df)
     if order_df.empty or "Sale Date" not in order_df.columns or "Order ID" not in order_df.columns:
         return pd.Series(dtype=float), pd.Series(dtype=float), pd.DataFrame(), "No model"
@@ -663,50 +765,30 @@ def build_order_forecast(df: pd.DataFrame, months_ahead: int) -> tuple[pd.Series
         return pd.Series(dtype=float), pd.Series(dtype=float), pd.DataFrame(), "No model"
 
     working["Day"] = working["Sale Date"].dt.normalize()
-    daily = working.groupby("Day")["Order ID"].nunique().sort_index().astype(int)
+    daily = working.groupby("Day")["Order ID"].nunique().sort_index().astype(float)
     full_index = pd.date_range(daily.index.min(), daily.index.max(), freq="D")
-    daily = daily.reindex(full_index, fill_value=0).astype(int)
-    daily_model = daily.astype(float)
+    daily = daily.reindex(full_index, fill_value=0.0)
 
-    horizon_days = max(35, months_ahead * 35)
-    forecast_index = pd.date_range(daily.index.max() + pd.Timedelta(days=1), periods=horizon_days, freq="D")
-    model_name = "Recent average"
-
-    if len(daily_model) >= 56 and daily_model.nunique() > 1:
-        try:
-            fit = ExponentialSmoothing(
-                daily_model,
-                trend="add",
-                seasonal="add",
-                seasonal_periods=7,
-                initialization_method="estimated",
-            ).fit(optimized=True)
-            forecast = fit.forecast(horizon_days)
-            model_name = "Holt-Winters exponential smoothing"
-        except Exception:
-            forecast = pd.Series(daily_model.tail(28).mean(), index=forecast_index)
-    elif len(daily_model) >= 14 and daily_model.nunique() > 1:
-        try:
-            fit = ExponentialSmoothing(
-                daily_model,
-                trend="add",
-                initialization_method="estimated",
-            ).fit(optimized=True)
-            forecast = fit.forecast(horizon_days)
-            model_name = "Trend exponential smoothing"
-        except Exception:
-            forecast = pd.Series(daily_model.tail(28).mean(), index=forecast_index)
+    if sales_frequency_type == "Intermittent (Sparse sales)":
+        actual_series = daily.resample("W-MON").sum().fillna(0.0)
+        model_name = "Weekly exponential smoothing"
     else:
-        forecast = pd.Series(daily_model.tail(min(14, len(daily_model))).mean(), index=forecast_index)
+        actual_series = daily
+        model_name = "Daily exponential smoothing"
 
-    forecast = pd.Series(forecast, index=forecast_index).fillna(0).clip(lower=0)
+    forecast = generate_forecast(df, sales_frequency_type, months_ahead)
+    if forecast.empty:
+        return pd.Series(dtype=float), pd.Series(dtype=float), pd.DataFrame(), "No model"
+
+    actual_series = actual_series.astype(float).apply(int)
     forecast = forecast.astype(float).apply(int)
+
     monthly = forecast.groupby(forecast.index.to_period("M")).sum().head(months_ahead)
     monthly_df = monthly.reset_index()
     monthly_df.columns = ["Month", "Projected Orders"]
     monthly_df["Month"] = monthly_df["Month"].astype(str)
     monthly_df["Projected Orders"] = monthly_df["Projected Orders"].astype(int)
-    return daily, forecast, monthly_df, model_name
+    return actual_series, forecast, monthly_df, model_name
 
 
 @st.cache_data(ttl=900)
@@ -938,7 +1020,7 @@ def main():
         st.session_state["settings_section_labels"] = section_labels_from_keys(selected_sections)
 
     if not settings.get("onboarding_complete", False):
-        st.markdown("## Welcome")
+        section("Welcome")
         st.caption("Set up your dashboard in two quick steps.")
 
         st.session_state.setdefault("onboarding_step", 1)
@@ -949,8 +1031,8 @@ def main():
             st.progress(st.session_state["onboarding_step"] / 2)
 
             if st.session_state["onboarding_step"] == 1:
-                st.markdown("### Step 1 of 2")
-                st.markdown("### Brand profile")
+                subsection("Step 1 of 2")
+                subsection("Brand Profile")
 
                 logo_upload = st.file_uploader(
                     "Store logo (optional)",
@@ -972,8 +1054,8 @@ def main():
                         st.session_state["onboarding_step"] = 2
                         st.rerun()
             else:
-                st.markdown("### Step 2 of 2")
-                st.markdown("### Dashboard sections")
+                subsection("Step 2 of 2")
+                subsection("Dashboard Sections")
                 st.caption("You can change these options any time later from the sidebar settings menu.")
 
                 st.multiselect(
@@ -1445,6 +1527,12 @@ def main():
     if "projection" in selected_section_set:
         section("Sales Projection")
         forecast_months = st.slider("Forecast horizon (months)", 1, 6, 3, key="forecast_months")
+        sales_frequency_type = st.radio(
+            "Store Sales Frequency",
+            ["Consistent (Daily sales)", "Intermittent (Sparse sales)"],
+            horizontal=True,
+            key="sales_frequency_type",
+        )
 
         forecast_df = df.copy()
         forecast_order_df = get_order_level_df(forecast_df)
@@ -1502,7 +1590,11 @@ def main():
         if forecast_order_df.empty or "Sale Date" not in forecast_order_df.columns or "Order ID" not in forecast_order_df.columns:
             empty_chart_note()
         else:
-            actual_daily, forecast_daily, forecast_monthly, model_name = build_order_forecast(forecast_df, forecast_months)
+            actual_daily, forecast_daily, forecast_monthly, model_name = build_order_forecast(
+                forecast_df,
+                forecast_months,
+                sales_frequency_type,
+            )
 
             if actual_daily.empty or forecast_monthly.empty:
                 empty_chart_note()

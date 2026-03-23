@@ -1623,10 +1623,18 @@ def main():
                     st.plotly_chart(fig, use_container_width=True)
 
                 with fp_right:
+                    first_period_label = str(forecast_monthly["Month"].iloc[0])
+                    current_period_label = str(pd.Period(date.today(), freq="M"))
+                    first_period_metric_label = (
+                        "Current month remainder"
+                        if first_period_label == current_period_label
+                        else f"{first_period_label} forecast"
+                    )
+
                     next_month_orders = forecast_monthly["Projected Orders"].iloc[0]
                     total_horizon_orders = forecast_monthly["Projected Orders"].sum()
-                    st.metric("Next month forecast", f"{int(next_month_orders):,}")
-                    st.metric(f"Next {forecast_months} months", f"{int(total_horizon_orders):,}")
+                    st.metric(first_period_metric_label, f"{int(next_month_orders):,}")
+                    st.metric(f"{forecast_months}-month horizon total", f"{int(total_horizon_orders):,}")
                     dataframe_with_one_index(forecast_monthly, use_container_width=True)
 
         subsection("Item Unit Forecast")
@@ -1663,10 +1671,17 @@ def main():
                 st.plotly_chart(fig, use_container_width=True)
 
             with it_right:
-                st.metric("Forecasted items", f"{len(item_forecast_df):,}")
+                horizon_units = int(item_forecast_df["Forecast Units"].sum())
+                st.metric("Forecasted product lines", f"{len(item_forecast_df):,}")
+                st.metric("Forecast units (horizon)", f"{horizon_units:,}")
                 if month_cols:
                     month_one_units = item_forecast_df[month_cols[0]].sum()
                     st.metric(f"{month_cols[0]} units", f"{int(month_one_units):,}")
+
+            st.caption(
+                "Order Forecast predicts number of orders. Item Unit Forecast predicts units by known product lines "
+                "from historical sales only, so totals can differ."
+            )
 
             display_cols = [
                 "Card Name",

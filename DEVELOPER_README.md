@@ -62,11 +62,13 @@ On startup, processes any CSVs already sitting in the watch folder.
 
 ### app.py
 
-Reads the `sales` and `listings` Firestore collections on load, caches with `@st.cache_data(ttl=300)`, and computes all aggregates in memory. Sidebar uploads call the same cleaning/upsert logic as the watcher directly, without going through the file system.
+Reads the `sales` Firestore collection on load (`@st.cache_data(ttl=15)`) and computes all aggregates in memory. Sidebar uploads call the same cleaning/upsert logic as the watcher directly, without going through the file system.
 
 On first run, `app.py` shows a two-step onboarding flow and persists UI settings to `settings/dashboard_settings.json` (optional logo path, selected visible sections, onboarding complete flag). A `store_name` key is still retained in settings for compatibility/future use, but store name is not currently user-editable in the UI.
 
-The UI styling is theme-aware (light/dark) via CSS variables and includes a bottom credits footer rendered in `main()`.
+The UI styling is theme-aware (light/dark) via CSS variables and includes a bottom credits footer rendered in `main()`. Dashboard tables are rendered with one-based row numbering via a shared helper.
+
+Onboarding/setup uses the same section/subsection heading system as the main dashboard and shares the same multiselect colorway rules, including theme-aware text color in the chip tags and popover options.
 
 ---
 
@@ -89,6 +91,12 @@ Etsy's two raw export files contain complementary data — items has transaction
 
 Pairing state is keyed by `YYYYMMDDHHMM` (current minute). Files within the same or adjacent minute are matched. If a partner doesn't arrive within `PAIR_WAIT_SECONDS`, the items file is processed solo (it has enough data via Transaction ID). A solo orders file is never ingested — it has no Transaction ID to use as a document ID — and logs a warning.
 
+When items + orders are merged:
+- `Order ID` is normalized first (e.g., strips `#` and numeric `.0` suffixes) before joining.
+- Orders rows are deduplicated to one row per `Order ID` to avoid fan-out joins.
+- Order-level financial fields are explicitly coalesced from SoldOrders when present (`Order Total`, `Order Net`, `Card Processing Fees`, etc.).
+- Unmatched rows are counted and logged for visibility.
+
 ---
 
 ## Firestore collections
@@ -101,10 +109,10 @@ Pairing state is keyed by `YYYYMMDDHHMM` (current minute). Files within the same
 
 ### `listings`
 
-- **Document ID:** SKU slug if available, otherwise a slug/hash derived from title + variations
+- **Document ID:** `Listing ID` slug when available, otherwise SKU slug, otherwise a slug/hash derived from title + variations
 - **Source:** Etsy listings CSV export (`TITLE`, `PRICE`, `QUANTITY` format)
 - **Write mode:** `merge=True`, same timestamp pattern as sales
-- **Used for:** including active listings with zero recent sales in item-level forecasts
+- **Used for:** catalog metadata and stable listing identity for future analytics/joins
 
 ---
 
@@ -119,7 +127,7 @@ Strip `$`, `,`, whitespace. Replace `-` with `0`. Parse as float.
 Try formats `%m/%d/%Y`, `%m/%d/%y`, `%Y-%m-%d` in order. Return `None` on failure.
 
 **ID columns** (`Transaction ID`, `Order ID`)
-Cast to string, strip, split on `.` and take the first part (removes pandas float suffixes like `3633762006.0`).
+Cast to string, strip, remove leading `#`, and trim numeric float suffixes like `3633762006.0` → `3633762006`.
 
 **Strings**
 Replace empty strings and whitespace-only values with `None`. Drop fully empty rows.
@@ -175,6 +183,45 @@ Priority rules (items-file version wins in all cases):
 | `PAIR_WAIT_SECONDS` | `30` | Seconds to wait for a partner file before processing solo |
 | `SALES_COLLECTION` | `sales` | Firestore collection name for sales data |
 | `LISTINGS_COLLECTION` | `listings` | Firestore collection name for listings data |
+
+---
+
+## Forecasting model behavior
+
+Sales Projection uses two forecast paths:
+
+- **Order Forecast** (`generate_forecast` + `build_order_forecast` in `app.py`)
+    - User picks `Store Sales Frequency`:
+        - `Consistent (Daily sales)` → resample daily, seasonal period `7`, forecast steps `months * 30`.
+        - `Intermittent (Sparse sales)` → resample weekly (`W-MON`), seasonal period `52`, forecast steps `months * 4`.
+    - Uses `ExponentialSmoothing(trend="add", seasonal="add")` when enough history exists (at least two full seasonal periods).
+    - Falls back to `seasonal=None` if seasonal fitting is not feasible.
+    - Forecast outputs are floored to whole orders (no decimals).
+    - Projection UI supports an explicit historical start/end date selector used to train the model.
+    - First summary metric is context-aware: current-month forecasts are labeled as `Current month remainder`.
+
+- **Item Unit Forecast** (`build_item_forecast`)
+    - Forecasts only from historical sold product lines present in sales data.
+    - Outputs are floored to whole units.
+    - Does not attempt to infer future new listings; totals may differ from order-count forecasts.
+
+---
+
+## Order History behavior
+
+- Table is Transaction-ID first for easier support/reference workflows.
+- Includes derived `Earnings` (`Order Net - Shipping`) when source fields exist.
+- UI explicitly documents formulas shown below the table:
+    - `Order Total = sticker price - discount + shipping`
+    - `Order Net = sticker price - discount + shipping - card processing fee`
+    - `Earnings = Order Net - shipping`
+
+---
+
+## Fulfillment metric behavior
+
+- `Days to Ship` is computed as integer day differences (`Date Shipped - Date Paid`).
+- Average and median use IQR clipping (`1.5 * IQR`) before summarizing so outliers do not dominate headline metrics.
 
 ---
 

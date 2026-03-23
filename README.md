@@ -4,6 +4,8 @@ A personal sales analytics dashboard built for Etsy shops. Drop in your Etsy CSV
 
 On first launch, a two-step onboarding flow lets you upload an optional logo and choose which dashboard sections to show. For now, store name is fixed in-app. Logo and visible sections can be changed later from the sidebar settings menu. These settings are persisted in `settings/dashboard_settings.json`.
 
+The onboarding section picker uses the same blue chip style as the main dashboard settings selector and follows the active theme text color (dark text in light mode, light text in dark mode).
+
 If you want to understand the code or extend it, see [DEVELOPER_README.md](DEVELOPER_README.md).
 
 ---
@@ -19,12 +21,12 @@ Total Orders, Units Sold, Net Revenue, Avg Order Value, Repeat Buyers, Unique Pr
 - **Sales Over Time** — monthly or weekly bars with a cumulative overlay
 - **Style Breakdown & Payment Methods** — donut and sunburst charts
 - **US Sales by State** — choropleth map, switchable between orders, units, and revenue
-- **Sales Projection** — forecasted order volume by month, plus per-item unit forecasts that include active listings with no recent sales
+- **Sales Projection** — selectable historical training range, store frequency mode (daily vs intermittent), whole-order monthly forecasts, and per-item unit forecasts from known historical product lines
 - **Buyer Analysis** — repeat buyer table with VIP/Returning/New tiers
 - **Coupon Effectiveness** — usage counts, total discounts, and avg net with vs. without coupons
 - **Customer Segments** — behavior-based clustering
-- **Fulfillment Speed** — days from payment to shipment, histogram and averages
-- **Order History** — searchable, sortable full order table at the bottom
+- **Fulfillment Speed** — integer days from payment to shipment, histogram, and outlier-aware average/median
+- **Order History** — searchable/sortable table with Transaction ID-first layout, Order Total/Order Net formulas, and an Earnings column
 
 The dashboard auto-refreshes every 20 seconds. You can also force a refresh from the sidebar.
 
@@ -135,11 +137,16 @@ Etsy has three separate exports, both found under **Shop Manager → Settings �
 |---|---|
 | **Sold Order Items** | One row per item sold — transaction IDs, listing details, variations, item prices (most important due to transaction ID) |
 | **Sold Orders** | One row per order — buyer name, shipping address, order totals |
-| **Currently For Sale** | One row per active listing — listing details, prices, inventory |
+| **Currently For Sale** | One row per active listing — listing details, prices, inventory, and listing identifiers |
 
 You can drop any of these at any time, in any order. If you drop them at the same time, they're automatically joined.
 
 > **Dropping the same file twice is safe.** The app deduplicates by Transaction ID so nothing gets double-counted.
+
+Forecast notes:
+- The first order metric in Sales Projection can show the **current month remainder** when the forecast starts mid-month.
+- Order Forecast predicts order count. Item Unit Forecast predicts units by known historical product lines, so totals can differ.
+- Fulfillment average/median days use outlier clipping so unusual delays have less impact.
 
 ---
 

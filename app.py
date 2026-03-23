@@ -102,6 +102,14 @@ def save_logo_bytes(logo_bytes: bytes, filename: str | None) -> str:
     return str(target_path)
 
 
+def save_firebase_secret_json(secret_json_bytes: bytes) -> str:
+    secrets_dir = Path("secrets")
+    secrets_dir.mkdir(parents=True, exist_ok=True)
+    target_path = secrets_dir / "secrets.json"
+    target_path.write_bytes(secret_json_bytes)
+    return str(target_path)
+
+
 def section_labels_from_keys(section_keys: list[str]) -> list[str]:
     return [label for label, key in SECTION_OPTIONS.items() if key in section_keys]
 
@@ -118,6 +126,9 @@ def clear_onboarding_session_state():
         "onboarding_logo_upload",
         "onboarding_logo_bytes",
         "onboarding_logo_name",
+        "onboarding_has_firebase",
+        "onboarding_firebase_upload",
+        "onboarding_firebase_saved_path",
     ]:
         st.session_state.pop(key, None)
 
@@ -1020,11 +1031,9 @@ def main():
         st.session_state["settings_section_labels"] = section_labels_from_keys(selected_sections)
 
     if not settings.get("onboarding_complete", False):
-        section("Welcome")
-        st.caption("Set up your dashboard in two quick steps.")
+        section("Welcome! Let's get your dashboard set up.")
 
         st.session_state.setdefault("onboarding_step", 1)
-        st.session_state.setdefault("onboarding_section_labels", section_labels_from_keys(selected_sections))
 
         _, center, _ = st.columns([1, 2, 1])
         with center:
@@ -1055,15 +1064,73 @@ def main():
                         st.rerun()
             else:
                 subsection("Step 2 of 2")
-                subsection("Dashboard Sections")
-                st.caption("You can change these options any time later from the sidebar settings menu.")
+                subsection("Let's get your Google Firebase database set up.")
+                st.markdown("Have you already made one?")
 
-                st.multiselect(
-                    "Sections to display",
-                    options=list(SECTION_OPTIONS.keys()),
-                    key="onboarding_section_labels",
-                    placeholder="Choose sections to display",
-                )
+                st.session_state.setdefault("onboarding_has_firebase", "")
+
+                choice_col_l, choice_col_r = st.columns(2)
+                with choice_col_l:
+                    if st.button("Yes", use_container_width=True, key="onboarding_firebase_yes"):
+                        st.session_state["onboarding_has_firebase"] = "yes"
+                with choice_col_r:
+                    if st.button("No", use_container_width=True, key="onboarding_firebase_no"):
+                        st.session_state["onboarding_has_firebase"] = "no"
+
+                firebase_choice = st.session_state.get("onboarding_has_firebase", "")
+                secrets_dir = Path("secrets")
+                existing_secret_files = sorted(p.name for p in secrets_dir.glob("*.json")) if secrets_dir.is_dir() else []
+
+                if firebase_choice == "yes":
+                    with st.expander(
+                        "Upload your API .json file if it is not already in /secrets",
+                        expanded=True,
+                    ):
+                        if existing_secret_files:
+                            st.caption(f"Detected in /secrets: {', '.join(existing_secret_files)}")
+                        firebase_upload = st.file_uploader(
+                            "Firebase service account JSON",
+                            type=["json"],
+                            key="onboarding_firebase_upload",
+                        )
+                        if firebase_upload is not None:
+                            if st.button(
+                                "Save to /secrets/secrets.json",
+                                use_container_width=True,
+                                key="onboarding_save_firebase_json_yes",
+                            ):
+                                saved_secret_path = save_firebase_secret_json(firebase_upload.getvalue())
+                                st.session_state["onboarding_firebase_saved_path"] = saved_secret_path
+                                st.success("Saved credentials as /secrets/secrets.json.")
+                elif firebase_choice == "no":
+                    st.info(
+                        "Quick setup steps:\n"
+                        "1. Go to console.firebase.google.com and create a project.\n"
+                        "2. Open Build > Firestore Database and create a database.\n"
+                        "3. In Project settings > Service accounts, generate a private key JSON.\n"
+                        "4. Upload that file below and it will be saved as /secrets/secrets.json."
+                    )
+                    with st.expander("Upload your Firebase API .json file", expanded=True):
+                        firebase_upload = st.file_uploader(
+                            "Firebase service account JSON",
+                            type=["json"],
+                            key="onboarding_firebase_upload",
+                        )
+                        if firebase_upload is not None:
+                            if st.button(
+                                "Save to /secrets/secrets.json",
+                                use_container_width=True,
+                                key="onboarding_save_firebase_json_no",
+                            ):
+                                saved_secret_path = save_firebase_secret_json(firebase_upload.getvalue())
+                                st.session_state["onboarding_firebase_saved_path"] = saved_secret_path
+                                st.success("Saved credentials as /secrets/secrets.json.")
+                else:
+                    st.caption("Select Yes or No to continue.")
+
+                saved_secret_path = st.session_state.get("onboarding_firebase_saved_path", "")
+                if saved_secret_path and Path(saved_secret_path).is_file():
+                    st.success("Firebase credentials are ready in /secrets/secrets.json.")
 
                 step2_col_l, step2_col_r = st.columns([1, 1])
                 with step2_col_l:
@@ -1071,8 +1138,13 @@ def main():
                         st.session_state["onboarding_step"] = 1
                         st.rerun()
                 with step2_col_r:
-                    if st.button("Finish Setup", use_container_width=True, key="onboarding_finish"):
-                        chosen_labels = st.session_state.get("onboarding_section_labels", list(SECTION_OPTIONS.keys()))
+                    if st.button(
+                        "Finish Setup",
+                        use_container_width=True,
+                        key="onboarding_finish",
+                        disabled=not bool(firebase_choice),
+                    ):
+                        chosen_section_keys = selected_sections
                         updated_logo_path = logo_path
 
                         if "onboarding_logo_bytes" in st.session_state:
@@ -1085,11 +1157,11 @@ def main():
                             {
                                 "store_name": store_name,
                                 "logo_path": updated_logo_path,
-                                "selected_sections": section_keys_from_labels(chosen_labels),
+                                "selected_sections": chosen_section_keys,
                                 "onboarding_complete": True,
                             }
                         )
-                        st.session_state["settings_section_labels"] = chosen_labels
+                        st.session_state["settings_section_labels"] = section_labels_from_keys(chosen_section_keys)
                         st.session_state["settings_menu_open"] = False
                         clear_onboarding_session_state()
                         st.cache_data.clear()

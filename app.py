@@ -353,6 +353,30 @@ st.markdown(
         font-size: 0.95rem;
         margin: 0 0 0.35rem 0;
     }}
+    .sidebar-category {{
+        font-size: 1.02rem;
+        font-weight: 700;
+        color: var(--text-color);
+        letter-spacing: 0.01em;
+        margin: 0.15rem 0 0.35rem 0;
+        padding-bottom: 0.18rem;
+        border-bottom: 1px solid rgba(46, 117, 182, 0.35);
+    }}
+    .sidebar-footer {{
+        margin-top: 0.35rem;
+        padding: 0.55rem 0.65rem;
+        border: 1px solid {UI_BORDER_COLOR};
+        border-radius: 10px;
+        background: rgba(46, 117, 182, 0.10);
+        color: var(--text-color);
+        font-size: 0.80rem;
+        line-height: 1.35;
+    }}
+    .sidebar-footer a {{
+        color: var(--text-color) !important;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+    }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -515,6 +539,10 @@ def subsection(title: str):
     st.markdown(f'<div class="subsection-header">{title}</div>', unsafe_allow_html=True)
 
 
+def sidebar_category(title: str):
+    st.markdown(f'<div class="sidebar-category">{title}</div>', unsafe_allow_html=True)
+
+
 def kpi_card(label: str, value: str):
     st.markdown(
         f'<div class="kpi-card"><div class="kpi-label">{label}</div>'
@@ -541,12 +569,24 @@ def dataframe_with_one_index(df: pd.DataFrame, **kwargs):
     st.dataframe(display_df, **kwargs)
 
 
-def render_credits():
+def render_credits(*, sidebar: bool = False):
     year = date.today().year
+    if sidebar:
+        st.markdown(
+            f"""
+            <div class="sidebar-footer">
+                © {year} • MIT License • Made by <a href="https://github.com/ButterMyGit" target="_blank">ButterMyGit</a>,
+                Initially built for <a href="https://theslabguy.etsy.com" target="_blank">TheSlabGuy</a> on Etsy.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        return
+
     st.divider()
     st.caption(
-        f"© {year} • MIT License • Made by [ButterMyGit](https://github.com/ButterMyGit) • "
-        "Initially built for [TheSlabGuy](https://theslabguy.etsy.com)"
+        f"© {year} • MIT License • Made by [ButterMyGit](https://github.com/ButterMyGit), "
+        "Initially built for [TheSlabGuy](https://theslabguy.etsy.com) on Etsy."
     )
 
 
@@ -1182,6 +1222,67 @@ def main():
         st.caption("Sales Dashboard")
         st.caption("Auto-refreshes every 20 seconds.")
 
+        sidebar_category("Customization")
+
+        # Date preset
+        preset = st.selectbox(
+            "Date range",
+            ["All time", "Last 30 days", "Last 90 days", "This year", "Last year", "Custom"],
+        )
+        today = date.today()
+        if preset == "Last 30 days":
+            start_d, end_d = today - timedelta(days=30), today
+        elif preset == "Last 90 days":
+            start_d, end_d = today - timedelta(days=90), today
+        elif preset == "This year":
+            start_d, end_d = date(today.year, 1, 1), today
+        elif preset == "Last year":
+            start_d, end_d = date(today.year - 1, 1, 1), date(today.year - 1, 12, 31)
+        elif preset == "Custom":
+            start_d = st.date_input("From", value=today - timedelta(days=90))
+            end_d = st.date_input("To", value=today)
+        else:
+            start_d, end_d = None, None
+
+        order_types = ["All"]
+        if "Order Type" in df_all.columns:
+            order_types.extend(sorted(df_all["Order Type"].dropna().unique().tolist()))
+        sel_order_type = st.selectbox("Order type", order_types)
+
+        styles = ["All"]
+        if "Style" in df_all.columns:
+            styles.extend(sorted(df_all["Style"].dropna().unique().tolist()))
+        sel_style = st.selectbox("Style / Variation", styles)
+
+        st.divider()
+        sidebar_category("Upload Etsy CSVs")
+        uploads = st.file_uploader(
+            "Drag and drop Etsy exports here",
+            type=["csv"],
+            accept_multiple_files=True,
+            label_visibility="collapsed",
+        )
+        if uploads and st.button("Process uploaded CSVs", use_container_width=True):
+            with st.spinner("Processing uploaded CSVs..."):
+                summary = process_sidebar_uploads(uploads)
+            st.cache_data.clear()
+            st.session_state["upload_result"] = summary
+            st.rerun()
+
+        if "upload_result" in st.session_state:
+            summary = st.session_state["upload_result"]
+            st.success(
+                "Processed uploads: "
+                f"{summary['pairs']} paired batch(es), "
+                f"{summary['solo_items']} solo item file(s), "
+                f"{summary['combined']} combined file(s), "
+                f"{summary.get('listings', 0)} listing file(s), "
+                f"{summary['skipped_orders']} unmatched orders file(s)."
+            )
+
+        st.divider()
+        sidebar_category("Settings")
+
         toggle_label = "Close settings" if settings_open else "Settings"
         if st.button(toggle_label, use_container_width=True, key="settings_toggle"):
             settings_open = not settings_open
@@ -1255,76 +1356,18 @@ def main():
                 st.cache_data.clear()
                 st.rerun()
 
-            st.divider()
-
-        # Date preset
-        preset = st.selectbox(
-            "Date range",
-            ["All time", "Last 30 days", "Last 90 days", "This year", "Last year", "Custom"],
-        )
-        today = date.today()
-        if preset == "Last 30 days":
-            start_d, end_d = today - timedelta(days=30), today
-        elif preset == "Last 90 days":
-            start_d, end_d = today - timedelta(days=90), today
-        elif preset == "This year":
-            start_d, end_d = date(today.year, 1, 1), today
-        elif preset == "Last year":
-            start_d, end_d = date(today.year - 1, 1, 1), date(today.year - 1, 12, 31)
-        elif preset == "Custom":
-            start_d = st.date_input("From", value=today - timedelta(days=90))
-            end_d = st.date_input("To", value=today)
-        else:
-            start_d, end_d = None, None
-
-        order_types = ["All"]
-        if "Order Type" in df_all.columns:
-            order_types.extend(sorted(df_all["Order Type"].dropna().unique().tolist()))
-        sel_order_type = st.selectbox("Order type", order_types)
-
-        styles = ["All"]
-        if "Style" in df_all.columns:
-            styles.extend(sorted(df_all["Style"].dropna().unique().tolist()))
-        sel_style = st.selectbox("Style / Variation", styles)
-
-        st.divider()
-        st.caption("Upload Etsy CSVs")
-        uploads = st.file_uploader(
-            "Drag and drop Etsy exports here",
-            type=["csv"],
-            accept_multiple_files=True,
-            label_visibility="collapsed",
-        )
-        if uploads and st.button("Process uploaded CSVs", use_container_width=True):
-            with st.spinner("Processing uploaded CSVs..."):
-                summary = process_sidebar_uploads(uploads)
-            st.cache_data.clear()
-            st.session_state["upload_result"] = summary
-            st.rerun()
-
-        if "upload_result" in st.session_state:
-            summary = st.session_state["upload_result"]
-            st.success(
-                "Processed uploads: "
-                f"{summary['pairs']} paired batch(es), "
-                f"{summary['solo_items']} solo item file(s), "
-                f"{summary['combined']} combined file(s), "
-                f"{summary.get('listings', 0)} listing file(s), "
-                f"{summary['skipped_orders']} unmatched orders file(s)."
-            )
-
         st.divider()
         if st.button("Force refresh"):
             st.cache_data.clear()
             st.rerun()
         st.caption(f"Last loaded: {load_time}")
+        render_credits(sidebar=True)
 
     # ---- Apply filters -----------------------------------------------------
     df = df_all.copy()
 
     if df.empty:
         st.warning("No sales data found. Drop a CSV into data/watch/ to get started.")
-        render_credits()
         return
 
     if start_d and "Sale Date" in df.columns:
@@ -2112,9 +2155,6 @@ def main():
             ]
             display_columns = [col for col in display_columns if col in display.columns]
             dataframe_with_one_index(display[display_columns], use_container_width=True, height=360)
-
-    render_credits()
-
 
 if __name__ == "__main__":
     main()

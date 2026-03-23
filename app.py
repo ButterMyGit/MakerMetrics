@@ -1442,25 +1442,42 @@ def main():
             if not sale_dates.empty:
                 start_default = sale_dates.dt.date.min()
                 today_date = date.today()
-                end_default = today_date if today_date >= start_default else start_default
-                max_picker_date = end_default if end_default >= today_date else today_date
+                max_picker_date = today_date if today_date >= start_default else start_default
 
-                selected_range = st.date_input(
-                    "Historical data range",
-                    value=(start_default, end_default),
-                    min_value=start_default,
-                    max_value=max_picker_date,
-                    key="projection_history_range",
-                )
+                if "projection_history_start" not in st.session_state:
+                    st.session_state["projection_history_start"] = start_default
+                if st.session_state["projection_history_start"] < start_default:
+                    st.session_state["projection_history_start"] = start_default
 
-                if isinstance(selected_range, (tuple, list)) and len(selected_range) == 2:
-                    hist_start, hist_end = selected_range
-                else:
-                    hist_start = selected_range
-                    hist_end = end_default
+                if st.session_state.get("projection_history_end_seed") != max_picker_date:
+                    st.session_state["projection_history_end"] = max_picker_date
+                    st.session_state["projection_history_end_seed"] = max_picker_date
+                elif "projection_history_end" not in st.session_state:
+                    st.session_state["projection_history_end"] = max_picker_date
+
+                if st.session_state["projection_history_end"] < start_default:
+                    st.session_state["projection_history_end"] = start_default
+
+                hist_col_l, hist_col_r = st.columns(2)
+                with hist_col_l:
+                    hist_start = st.date_input(
+                        "Historical start date",
+                        min_value=start_default,
+                        max_value=max_picker_date,
+                        key="projection_history_start",
+                    )
+                with hist_col_r:
+                    hist_end = st.date_input(
+                        "Historical end date",
+                        min_value=start_default,
+                        max_value=max_picker_date,
+                        key="projection_history_end",
+                    )
 
                 if hist_start > hist_end:
                     hist_start, hist_end = hist_end, hist_start
+                    st.session_state["projection_history_start"] = hist_start
+                    st.session_state["projection_history_end"] = hist_end
 
                 forecast_df = forecast_df[
                     (forecast_df["Sale Date"].dt.date >= hist_start)

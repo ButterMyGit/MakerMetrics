@@ -295,12 +295,18 @@ st.markdown(
         margin-top: 2px;
     }}
     .section-header {{
-        font-size: 18px;
+        font-size: 24px;
         font-weight: 700;
         color: inherit;
         border-bottom: 2px solid #2E75B6;
         padding-bottom: 4px;
         margin: 24px 0 12px 0;
+    }}
+    .subsection-header {{
+        font-size: 16px;
+        font-weight: 700;
+        color: inherit;
+        margin: 12px 0 8px 0;
     }}
     .chart-caption {{
         color: inherit;
@@ -464,6 +470,10 @@ def load_listings_data() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 def section(title: str):
     st.markdown(f'<div class="section-header">{title}</div>', unsafe_allow_html=True)
+
+
+def subsection(title: str):
+    st.markdown(f'<div class="subsection-header">{title}</div>', unsafe_allow_html=True)
 
 
 def kpi_card(label: str, value: str):
@@ -653,18 +663,19 @@ def build_order_forecast(df: pd.DataFrame, months_ahead: int) -> tuple[pd.Series
         return pd.Series(dtype=float), pd.Series(dtype=float), pd.DataFrame(), "No model"
 
     working["Day"] = working["Sale Date"].dt.normalize()
-    daily = working.groupby("Day")["Order ID"].nunique().sort_index().astype(float)
+    daily = working.groupby("Day")["Order ID"].nunique().sort_index().astype(int)
     full_index = pd.date_range(daily.index.min(), daily.index.max(), freq="D")
-    daily = daily.reindex(full_index, fill_value=0.0)
+    daily = daily.reindex(full_index, fill_value=0).astype(int)
+    daily_model = daily.astype(float)
 
     horizon_days = max(35, months_ahead * 35)
     forecast_index = pd.date_range(daily.index.max() + pd.Timedelta(days=1), periods=horizon_days, freq="D")
     model_name = "Recent average"
 
-    if len(daily) >= 56 and daily.nunique() > 1:
+    if len(daily_model) >= 56 and daily_model.nunique() > 1:
         try:
             fit = ExponentialSmoothing(
-                daily,
+                daily_model,
                 trend="add",
                 seasonal="add",
                 seasonal_periods=7,
@@ -673,27 +684,28 @@ def build_order_forecast(df: pd.DataFrame, months_ahead: int) -> tuple[pd.Series
             forecast = fit.forecast(horizon_days)
             model_name = "Holt-Winters exponential smoothing"
         except Exception:
-            forecast = pd.Series(daily.tail(28).mean(), index=forecast_index)
-    elif len(daily) >= 14 and daily.nunique() > 1:
+            forecast = pd.Series(daily_model.tail(28).mean(), index=forecast_index)
+    elif len(daily_model) >= 14 and daily_model.nunique() > 1:
         try:
             fit = ExponentialSmoothing(
-                daily,
+                daily_model,
                 trend="add",
                 initialization_method="estimated",
             ).fit(optimized=True)
             forecast = fit.forecast(horizon_days)
             model_name = "Trend exponential smoothing"
         except Exception:
-            forecast = pd.Series(daily.tail(28).mean(), index=forecast_index)
+            forecast = pd.Series(daily_model.tail(28).mean(), index=forecast_index)
     else:
-        forecast = pd.Series(daily.tail(min(14, len(daily))).mean(), index=forecast_index)
+        forecast = pd.Series(daily_model.tail(min(14, len(daily_model))).mean(), index=forecast_index)
 
-    forecast = pd.Series(forecast, index=forecast_index).clip(lower=0)
+    forecast = pd.Series(forecast, index=forecast_index).fillna(0).clip(lower=0)
+    forecast = forecast.astype(float).apply(int)
     monthly = forecast.groupby(forecast.index.to_period("M")).sum().head(months_ahead)
     monthly_df = monthly.reset_index()
     monthly_df.columns = ["Month", "Projected Orders"]
     monthly_df["Month"] = monthly_df["Month"].astype(str)
-    monthly_df["Projected Orders"] = monthly_df["Projected Orders"].round(1)
+    monthly_df["Projected Orders"] = monthly_df["Projected Orders"].astype(int)
     return daily, forecast, monthly_df, model_name
 
 
@@ -1486,7 +1498,7 @@ def main():
                 forecast_order_df = get_order_level_df(forecast_df)
                 st.caption(f"Historical range used for forecasting: {hist_start} to {hist_end}")
 
-        st.markdown("#### Order Forecast")
+        subsection("Order Forecast")
         if forecast_order_df.empty or "Sale Date" not in forecast_order_df.columns or "Order ID" not in forecast_order_df.columns:
             empty_chart_note()
         else:
@@ -1521,11 +1533,11 @@ def main():
                 with fp_right:
                     next_month_orders = forecast_monthly["Projected Orders"].iloc[0]
                     total_horizon_orders = forecast_monthly["Projected Orders"].sum()
-                    st.metric("Next month forecast", f"{next_month_orders:.1f}")
-                    st.metric(f"Next {forecast_months} months", f"{total_horizon_orders:.1f}")
+                    st.metric("Next month forecast", f"{int(next_month_orders):,}")
+                    st.metric(f"Next {forecast_months} months", f"{int(total_horizon_orders):,}")
                     dataframe_with_one_index(forecast_monthly, use_container_width=True)
 
-        st.markdown("#### Item Unit Forecast")
+        subsection("Item Unit Forecast")
         item_forecast_df, month_cols = build_item_forecast(forecast_df, forecast_months)
 
         if month_cols:
@@ -1745,20 +1757,30 @@ def main():
             ship_df = ship_df.copy()
             ship_df["Days to Ship"] = (
                 ship_df["Date Shipped"] - ship_df["Date Paid"]
-            ).dt.total_seconds() / 86400
+            ).dt.days
             ship_df = ship_df[ship_df["Days to Ship"] >= 0]
 
             if ship_df.empty:
                 empty_chart_note()
             else:
-                avg_days = ship_df["Days to Ship"].mean()
-                median_days = ship_df["Days to Ship"].median()
+                robust_days = ship_df["Days to Ship"].astype(float)
+                q1 = robust_days.quantile(0.25)
+                q3 = robust_days.quantile(0.75)
+                iqr = q3 - q1
+                if pd.notna(iqr) and iqr > 0:
+                    lower = max(int(q1 - 1.5 * iqr), 0)
+                    upper = max(int(q3 + 1.5 * iqr), lower)
+                    robust_days = robust_days.clip(lower=lower, upper=upper)
+
+                avg_days = int(robust_days.mean()) if not robust_days.empty else 0
+                median_days = int(robust_days.median()) if not robust_days.empty else 0
                 same_day = int((ship_df["Days to Ship"] == 0).sum())
 
                 c7m1, c7m2, c7m3 = st.columns(3)
-                c7m1.metric("Avg days to ship", f"{avg_days:.1f}")
-                c7m2.metric("Median days to ship", f"{median_days:.1f}")
+                c7m1.metric("Avg days to ship", f"{avg_days:,}")
+                c7m2.metric("Median days to ship", f"{median_days:,}")
                 c7m3.metric("Same-day shipments", f"{same_day:,}")
+                st.caption("Average/median days use IQR clipping to reduce outlier impact.")
 
                 fig = px.histogram(
                     ship_df,

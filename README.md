@@ -1,4 +1,4 @@
-# Etsy Stats Dashboard
+# MakerMetrics: A Fully Offline Stats Dashboard for Etsy Shops
 
 [![Release](https://img.shields.io/badge/release-pre--release-orange)](https://github.com/ButterMyGit/Etsy-Stats-Dashboard/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)

@@ -1,5 +1,11 @@
 # Etsy Stats Dashboard
 
+[![Release](https://img.shields.io/badge/release-pre--release-orange)](https://github.com/ButterMyGit/Etsy-Stats-Dashboard/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/downloads/)
+[![Docker Compose](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
+[![Last commit](https://img.shields.io/github/last-commit/ButterMyGit/Etsy-Stats-Dashboard)](https://github.com/ButterMyGit/Etsy-Stats-Dashboard/commits)
+
 A personal sales analytics dashboard built for Etsy shops. Drop in your Etsy CSV exports and get a live, filterable view of your orders, top products, buyers, geographic sales, forecasts, and more — all running locally or in Docker on your own machine.
 
 On first launch, a two-step onboarding flow lets you upload an optional logo and confirm Firebase access. Setup only completes once a valid credentials file is detected. For now, store name is fixed in-app. Logo and visible sections can be changed later from the sidebar settings menu. These settings are persisted in `settings/dashboard_settings.json`.

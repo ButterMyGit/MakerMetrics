@@ -58,17 +58,17 @@ CSV file dropped
 
 Monitors `WATCH_DIR` for `.csv` files using `watchdog`. Handles both `on_created` and `on_moved` events (some tools move files in rather than create them). Sleeps 1 second after detection to ensure the write is complete before reading.
 
-On startup, processes any CSVs already sitting in the watch folder.
+On startup, watcher waits for Firebase credentials to become available (retry loop) and then processes any CSVs already sitting in the watch folder.
 
 ### app.py
 
 Reads the `sales` Firestore collection on load (`@st.cache_data(ttl=15)`) and computes all aggregates in memory. Sidebar uploads call the same cleaning/upsert logic as the watcher directly, without going through the file system.
 
-On first run, `app.py` shows a two-step onboarding flow and persists UI settings to `settings/dashboard_settings.json` (optional logo path, selected visible sections, onboarding complete flag). A `store_name` key is still retained in settings for compatibility/future use, but store name is not currently user-editable in the UI.
+On first run, `app.py` shows a two-step onboarding flow (brand profile + Firebase readiness check). Setup completion is gated until `resolve_credentials_path(FIREBASE_CREDENTIALS)` can find a credentials file. UI settings are persisted to `settings/dashboard_settings.json` (optional logo path, selected visible sections, onboarding complete flag). A `store_name` key is still retained in settings for compatibility/future use, but store name is not currently user-editable in the UI.
 
-The UI styling is theme-aware (light/dark) via CSS variables and includes a bottom credits footer rendered in `main()`. Dashboard tables are rendered with one-based row numbering via a shared helper.
+The UI styling is theme-aware (light/dark) via CSS variables and includes a sidebar credits footer rendered under `Last loaded`. Dashboard tables are rendered with one-based row numbering via a shared helper.
 
-Onboarding/setup uses the same section/subsection heading system as the main dashboard and shares the same multiselect colorway rules, including theme-aware text color in the chip tags and popover options.
+Onboarding/setup uses the same section/subsection heading system as the main dashboard. The sidebar settings multiselect uses theme-aware chip/popover color rules with readable text in both light and dark modes.
 
 ---
 
@@ -179,6 +179,7 @@ Priority rules (items-file version wins in all cases):
 | Variable | Default | Description |
 |---|---|---|
 | `FIREBASE_CREDENTIALS` | `secrets/firebase.json` | Path to service account JSON |
+| `FIREBASE_RETRY_SECONDS` | `5` | Watcher retry interval (seconds) when Firebase credentials are not yet available |
 | `WATCH_DIR` | `data/watch` | Folder monitored for CSV drops |
 | `PAIR_WAIT_SECONDS` | `30` | Seconds to wait for a partner file before processing solo |
 | `SALES_COLLECTION` | `sales` | Firestore collection name for sales data |
@@ -240,6 +241,7 @@ Each service also includes a local `build` definition (same root `Dockerfile`) p
 Volume mounts:
 - `./data/watch` → `/app/data/watch`
 - `./settings` → `/app/settings` (dashboard service)
+- `./secrets` → `/app/secrets` (dashboard service, writable for onboarding uploads)
 - `./secrets` → `/run/secrets` (read-only)
 
 ```bash

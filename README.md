@@ -2,9 +2,7 @@
 
 A personal sales analytics dashboard built for Etsy shops. Drop in your Etsy CSV exports and get a live, filterable view of your orders, top products, buyers, geographic sales, forecasts, and more — all running locally or in Docker on your own machine.
 
-On first launch, a two-step onboarding flow lets you upload an optional logo and choose which dashboard sections to show. For now, store name is fixed in-app. Logo and visible sections can be changed later from the sidebar settings menu. These settings are persisted in `settings/dashboard_settings.json`.
-
-The onboarding section picker uses the same blue chip style as the main dashboard settings selector and follows the active theme text color (dark text in light mode, light text in dark mode).
+On first launch, a two-step onboarding flow lets you upload an optional logo and confirm Firebase access. Setup only completes once a valid credentials file is detected. For now, store name is fixed in-app. Logo and visible sections can be changed later from the sidebar settings menu. These settings are persisted in `settings/dashboard_settings.json`.
 
 If you want to understand the code or extend it, see [DEVELOPER_README.md](DEVELOPER_README.md).
 
@@ -19,7 +17,7 @@ Total Orders, Units Sold, Net Revenue, Avg Order Value, Repeat Buyers, Unique Pr
 
 - **Most Popular Products** — ranked by units, orders, or revenue, with a top-N slider
 - **Sales Over Time** — monthly or weekly bars with a cumulative overlay
-- **Style Breakdown & Payment Methods** — donut and sunburst charts
+- **Style Breakdown & Payment Methods** — paired donut charts
 - **US Sales by State** — choropleth map, switchable between orders, units, and revenue
 - **Sales Projection** — selectable historical training range, store frequency mode (daily vs intermittent), whole-order monthly forecasts, and per-item unit forecasts from known historical product lines
 - **Buyer Analysis** — repeat buyer table with VIP/Returning/New tiers
@@ -57,6 +55,8 @@ This is the key that lets the app talk to your database.
 3. Click **Generate new private key** → **Generate key**.
 4. A `.json` file will download automatically. Rename it `firebase.json`.
 5. Place it at `secrets/firebase.json` inside this project folder.
+
+During in-app setup, **Finish Setup** stays disabled until this file is detected.
 
 > **Important:** Keep this file private. It's already in `.gitignore` so it won't be committed if you use Git, but don't share it or upload it anywhere.
 
@@ -170,6 +170,7 @@ LISTINGS_COLLECTION=listings
 
 **"Credentials failed" or Firebase errors**
 Confirm `secrets/firebase.json` exists, is the correct file, and wasn't corrupted during download. Re-download from Firebase if unsure.
+In Docker, the watcher keeps retrying Firebase initialization until credentials are available.
 
 **No data appears after uploading**
 Check that the file is an Etsy CSV (not a manually edited spreadsheet). If using the watch folder, check that the watcher process is actually running.

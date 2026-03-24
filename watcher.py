@@ -40,6 +40,7 @@ load_dotenv()
 WATCH_DIR = Path(os.getenv("WATCH_DIR", "data/watch"))
 PAIR_WAIT = int(os.getenv("PAIR_WAIT_SECONDS", "30"))
 CRED_PATH = os.getenv("FIREBASE_CREDENTIALS", "secrets/firebase.json")
+FIREBASE_RETRY_SECONDS = int(os.getenv("FIREBASE_RETRY_SECONDS", "5"))
 SALES_COLLECTION = os.getenv("SALES_COLLECTION", "sales")
 LISTINGS_COLLECTION = os.getenv("LISTINGS_COLLECTION", "listings")
 
@@ -62,28 +63,19 @@ def resolve_credentials_path(raw_path: str) -> Path:
     if path.is_file():
         return path
 
-    candidates = []
-    if path.is_dir():
-        candidates.append(path / "firebase.json")
-        candidates.extend(sorted(path.glob("*.json")))
-
-    if path.parent.exists():
-        candidates.append(path.parent / "firebase.json")
-        candidates.extend(sorted(path.parent.glob("*.json")))
-
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-
-    if path.is_dir():
+    if path.suffix.lower() == ".json":
         raise FileNotFoundError(
-            f"No Firebase JSON credential file found in directory: {path}. "
-            "Put firebase.json in that directory or set FIREBASE_CREDENTIALS to a JSON file path."
+            f"Firebase credentials file not found at {raw_path}. "
+            "Place your service account key at secrets/firebase.json or set FIREBASE_CREDENTIALS accordingly."
         )
 
+    candidate = path / "firebase.json"
+    if candidate.is_file():
+        return candidate
+
     raise FileNotFoundError(
-        f"Firebase credentials file not found at {raw_path}. "
-        "Place your service account key at secrets/firebase.json or set FIREBASE_CREDENTIALS accordingly."
+        f"No Firebase JSON credential file found in directory: {path}. "
+        "Put firebase.json in that directory or set FIREBASE_CREDENTIALS to a JSON file path."
     )
 
 
@@ -93,6 +85,18 @@ def init_firebase() -> firestore.Client:
         cred = credentials.Certificate(str(resolved_cred_path))
         firebase_admin.initialize_app(cred)
     return firestore.client()
+
+
+def wait_for_firebase() -> firestore.Client:
+    retry_seconds = max(1, FIREBASE_RETRY_SECONDS)
+    while True:
+        try:
+            return init_firebase()
+        except FileNotFoundError as exc:
+            log.warning("%s Retrying in %ss.", exc, retry_seconds)
+        except Exception:
+            log.exception("Firebase initialization failed. Retrying in %ss.", retry_seconds)
+        time.sleep(retry_seconds)
 
 
 # ---------------------------------------------------------------------------
@@ -829,7 +833,7 @@ class EtsyCSVHandler(FileSystemEventHandler):
 # Entry point
 # ---------------------------------------------------------------------------
 def main():
-    db = init_firebase()
+    db = wait_for_firebase()
     log.info("Firebase connected. Watching %s", WATCH_DIR.resolve())
 
     WATCH_DIR.mkdir(parents=True, exist_ok=True)

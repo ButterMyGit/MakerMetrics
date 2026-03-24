@@ -102,12 +102,64 @@ def save_logo_bytes(logo_bytes: bytes, filename: str | None) -> str:
     return str(target_path)
 
 
+def firebase_credentials_env_path() -> str:
+    return os.getenv("FIREBASE_CREDENTIALS", "secrets/firebase.json")
+
+
+def expected_credentials_path(raw_path: str) -> Path:
+    path = Path(raw_path)
+    if path.suffix.lower() == ".json":
+        return path
+    return path / "firebase.json"
+
+
+def firebase_credentials_status() -> tuple[bool, str, str]:
+    raw_path = firebase_credentials_env_path()
+    expected_path = expected_credentials_path(raw_path)
+    try:
+        resolved = resolve_credentials_path(raw_path)
+    except FileNotFoundError:
+        return False, str(expected_path), ""
+    return True, str(expected_path), str(resolved)
+
+
 def save_firebase_secret_json(secret_json_bytes: bytes) -> str:
-    secrets_dir = Path("secrets")
-    secrets_dir.mkdir(parents=True, exist_ok=True)
-    target_path = secrets_dir / "secrets.json"
-    target_path.write_bytes(secret_json_bytes)
-    return str(target_path)
+    try:
+        json.loads(secret_json_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("Uploaded file is not valid JSON.") from exc
+
+    runtime_raw_path = firebase_credentials_env_path()
+    runtime_expected_path = expected_credentials_path(runtime_raw_path)
+
+    candidate_targets = [runtime_expected_path, Path("secrets") / "firebase.json"]
+    seen_targets = set()
+    write_errors = []
+
+    for target_path in candidate_targets:
+        target_key = str(target_path)
+        if target_key in seen_targets:
+            continue
+        seen_targets.add(target_key)
+
+        try:
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_bytes(secret_json_bytes)
+        except OSError as exc:
+            write_errors.append(f"{target_path}: {exc}")
+            continue
+
+        try:
+            resolved_runtime_path = resolve_credentials_path(runtime_raw_path)
+        except FileNotFoundError:
+            continue
+        return str(resolved_runtime_path)
+
+    details = "; ".join(write_errors) if write_errors else "No writable credential path was available."
+    raise OSError(
+        "Unable to save Firebase credentials where runtime can read them. "
+        f"Expected {runtime_expected_path}. {details}"
+    )
 
 
 def section_labels_from_keys(section_keys: list[str]) -> list[str]:
@@ -411,28 +463,19 @@ def resolve_credentials_path(raw_path: str) -> Path:
     if path.is_file():
         return path
 
-    candidates = []
-    if path.is_dir():
-        candidates.append(path / "firebase.json")
-        candidates.extend(sorted(path.glob("*.json")))
-
-    if path.parent.exists():
-        candidates.append(path.parent / "firebase.json")
-        candidates.extend(sorted(path.parent.glob("*.json")))
-
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-
-    if path.is_dir():
+    if path.suffix.lower() == ".json":
         raise FileNotFoundError(
-            f"No Firebase JSON credential file found in directory: {path}. "
-            "Put firebase.json in that directory or set FIREBASE_CREDENTIALS to a JSON file path."
+            f"Firebase credentials file not found at {raw_path}. "
+            "Place your service account key at secrets/firebase.json or set FIREBASE_CREDENTIALS accordingly."
         )
 
+    candidate = path / "firebase.json"
+    if candidate.is_file():
+        return candidate
+
     raise FileNotFoundError(
-        f"Firebase credentials file not found at {raw_path}. "
-        "Place your service account key at secrets/firebase.json or set FIREBASE_CREDENTIALS accordingly."
+        f"No Firebase JSON credential file found in directory: {path}. "
+        "Put firebase.json in that directory or set FIREBASE_CREDENTIALS to a JSON file path."
     )
 
 
@@ -1118,16 +1161,23 @@ def main():
                         st.session_state["onboarding_has_firebase"] = "no"
 
                 firebase_choice = st.session_state.get("onboarding_has_firebase", "")
-                secrets_dir = Path("secrets")
-                existing_secret_files = sorted(p.name for p in secrets_dir.glob("*.json")) if secrets_dir.is_dir() else []
+                credentials_ready, expected_cred_path, resolved_cred_path = firebase_credentials_status()
+                project_secret_path = Path("secrets") / "firebase.json"
+
+                if project_secret_path.is_file():
+                    st.success("Detected existing /secrets/firebase.json.")
+                elif credentials_ready and resolved_cred_path:
+                    st.success(f"Detected Firebase credentials at: {resolved_cred_path}")
+                else:
+                    st.warning("Firebase credentials not detected yet. Add /secrets/firebase.json to continue.")
+
+                st.caption(f"Runtime credential path: {expected_cred_path}")
 
                 if firebase_choice == "yes":
                     with st.expander(
                         "Upload your API .json file if it is not already in /secrets",
-                        expanded=True,
+                        expanded=not credentials_ready,
                     ):
-                        if existing_secret_files:
-                            st.caption(f"Detected in /secrets: {', '.join(existing_secret_files)}")
                         firebase_upload = st.file_uploader(
                             "Firebase service account JSON",
                             type=["json"],
@@ -1135,20 +1185,25 @@ def main():
                         )
                         if firebase_upload is not None:
                             if st.button(
-                                "Save to /secrets/secrets.json",
+                                "Save to /secrets/firebase.json",
                                 use_container_width=True,
                                 key="onboarding_save_firebase_json_yes",
                             ):
-                                saved_secret_path = save_firebase_secret_json(firebase_upload.getvalue())
-                                st.session_state["onboarding_firebase_saved_path"] = saved_secret_path
-                                st.success("Saved credentials as /secrets/secrets.json.")
+                                try:
+                                    saved_secret_path = save_firebase_secret_json(firebase_upload.getvalue())
+                                except (OSError, ValueError) as exc:
+                                    st.error(str(exc))
+                                else:
+                                    st.session_state["onboarding_firebase_saved_path"] = saved_secret_path
+                                    st.success(f"Saved credentials and verified runtime access at: {saved_secret_path}")
+                                    st.rerun()
                 elif firebase_choice == "no":
                     st.info(
                         "Quick setup steps:\n"
                         "1. Go to console.firebase.google.com and create a project.\n"
                         "2. Open Build > Firestore Database and create a database.\n"
                         "3. In Project settings > Service accounts, generate a private key JSON.\n"
-                        "4. Upload that file below and it will be saved as /secrets/secrets.json."
+                        "4. Upload that file below and save it as /secrets/firebase.json."
                     )
                     with st.expander("Upload your Firebase API .json file", expanded=True):
                         firebase_upload = st.file_uploader(
@@ -1158,19 +1213,24 @@ def main():
                         )
                         if firebase_upload is not None:
                             if st.button(
-                                "Save to /secrets/secrets.json",
+                                "Save to /secrets/firebase.json",
                                 use_container_width=True,
                                 key="onboarding_save_firebase_json_no",
                             ):
-                                saved_secret_path = save_firebase_secret_json(firebase_upload.getvalue())
-                                st.session_state["onboarding_firebase_saved_path"] = saved_secret_path
-                                st.success("Saved credentials as /secrets/secrets.json.")
+                                try:
+                                    saved_secret_path = save_firebase_secret_json(firebase_upload.getvalue())
+                                except (OSError, ValueError) as exc:
+                                    st.error(str(exc))
+                                else:
+                                    st.session_state["onboarding_firebase_saved_path"] = saved_secret_path
+                                    st.success(f"Saved credentials and verified runtime access at: {saved_secret_path}")
+                                    st.rerun()
                 else:
                     st.caption("Select Yes or No to continue.")
 
                 saved_secret_path = st.session_state.get("onboarding_firebase_saved_path", "")
                 if saved_secret_path and Path(saved_secret_path).is_file():
-                    st.success("Firebase credentials are ready in /secrets/secrets.json.")
+                    st.success(f"Firebase credentials are ready: {saved_secret_path}")
 
                 step2_col_l, step2_col_r = st.columns([1, 1])
                 with step2_col_l:
@@ -1182,7 +1242,7 @@ def main():
                         "Finish Setup",
                         use_container_width=True,
                         key="onboarding_finish",
-                        disabled=not bool(firebase_choice),
+                        disabled=not (bool(firebase_choice) and credentials_ready),
                     ):
                         chosen_section_keys = selected_sections
                         updated_logo_path = logo_path
@@ -1206,6 +1266,8 @@ def main():
                         clear_onboarding_session_state()
                         st.cache_data.clear()
                         st.rerun()
+                if not credentials_ready:
+                    st.caption("Finish Setup will unlock once /secrets/firebase.json is detected.")
         return
 
     if not settings_open:
@@ -1281,7 +1343,10 @@ def main():
             )
 
         st.divider()
-        sidebar_category("Settings")
+        if st.button("Force refresh"):
+            st.cache_data.clear()
+            st.rerun()
+        st.caption(f"Last loaded: {load_time}")
 
         toggle_label = "Close settings" if settings_open else "Settings"
         if st.button(toggle_label, use_container_width=True, key="settings_toggle"):
@@ -1356,11 +1421,6 @@ def main():
                 st.cache_data.clear()
                 st.rerun()
 
-        st.divider()
-        if st.button("Force refresh"):
-            st.cache_data.clear()
-            st.rerun()
-        st.caption(f"Last loaded: {load_time}")
         render_credits(sidebar=True)
 
     # ---- Apply filters -----------------------------------------------------

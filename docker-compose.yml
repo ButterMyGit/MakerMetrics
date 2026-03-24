@@ -17,6 +17,7 @@ services:
     volumes:
       - ./data/watch:/app/data/watch
       - ./settings:/app/settings
+      - ./secrets:/app/secrets
       - ./secrets:/run/secrets:ro
     ports:
       - "8501:8501"

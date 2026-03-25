@@ -3,7 +3,7 @@
 [![Release](https://img.shields.io/badge/release-pre--release-orange)](https://github.com/ButterMyGit/MakerMetrics/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/downloads/)
-[![Docker Compose](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
+[![Docker Hub](https://img.shields.io/badge/docker%20hub-buttermygit%2Fmakermetrics-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/buttermygit/makermetrics)
 [![Last commit](https://img.shields.io/github/last-commit/ButterMyGit/MakerMetrics)](https://github.com/ButterMyGit/MakerMetrics/commits)
 
 A personal sales analytics dashboard built for Etsy shops. Drop in your Etsy CSV exports and get a live, filterable view of your orders, top products, buyers, geographic sales, forecasts, and more — all running locally or in Docker on your own machine.

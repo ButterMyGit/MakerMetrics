@@ -1,10 +1,10 @@
 # MakerMetrics: A Fully Offline Stats Dashboard for Etsy Shops
 
-[![Release](https://img.shields.io/badge/release-pre--release-orange)](https://github.com/ButterMyGit/Etsy-Stats-Dashboard/releases)
+[![Release](https://img.shields.io/badge/release-pre--release-orange)](https://github.com/ButterMyGit/MakerMetrics/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/downloads/)
 [![Docker Compose](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
-[![Last commit](https://img.shields.io/github/last-commit/ButterMyGit/Etsy-Stats-Dashboard)](https://github.com/ButterMyGit/Etsy-Stats-Dashboard/commits)
+[![Last commit](https://img.shields.io/github/last-commit/ButterMyGit/MakerMetrics)](https://github.com/ButterMyGit/MakerMetrics/commits)
 
 A personal sales analytics dashboard built for Etsy shops. Drop in your Etsy CSV exports and get a live, filterable view of your orders, top products, buyers, geographic sales, forecasts, and more — all running locally or in Docker on your own machine.
 
@@ -83,7 +83,7 @@ docker compose up
 
 Then open [http://localhost:8501](http://localhost:8501).
 
-That's it! Both services (dashboard and watcher) start together. The compose file is configured to pull prebuilt Hub images: `buttermygit/etsy-sales-dashboard:dashboard` and `buttermygit/etsy-sales-dashboard:watcher`, so local image builds are not required for normal use.
+That's it! Both services (dashboard and watcher) start together. The compose file is configured to pull prebuilt Hub images: `buttermygit/makermetrics:dashboard-v0.1.0-beta` and `buttermygit/makermetrics:watcher-v0.1.0-beta`, so local image builds are not required for normal use.
 
 If you want to rebuild locally from source (for development or before publishing), run:
 

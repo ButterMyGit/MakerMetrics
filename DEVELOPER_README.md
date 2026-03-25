@@ -22,7 +22,7 @@ This covers architecture, data flow, and extension points for the Etsy Stats Das
 ## Project layout
 
 ```
-etsy-stats-dashboard/
+MakerMetrics/
 ├── app.py                     # Streamlit UI — filters, metrics, all sections
 ├── watcher.py                 # CSV ingestion — detection, pairing, cleaning, upsert
 ├── requirements.txt

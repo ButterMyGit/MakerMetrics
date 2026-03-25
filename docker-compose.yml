@@ -3,8 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: buttermygit/etsy-sales-dashboard:dashboard
-    container_name: etsy-dashboard
+    image: buttermygit/makermetrics:dashboard-v0.1.0-beta
+    container_name: makermetrics-dashboard
     command: ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8501"]
     environment:
       FIREBASE_CREDENTIALS: /run/secrets
@@ -27,8 +27,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: buttermygit/etsy-sales-dashboard:watcher
-    container_name: etsy-watcher
+    image: buttermygit/makermetrics:watcher-v0.1.0-beta
+    container_name: makermetrics-watcher
     command: ["python", "watcher.py"]
     environment:
       FIREBASE_CREDENTIALS: /run/secrets

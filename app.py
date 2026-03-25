@@ -1715,51 +1715,11 @@ def main():
         if "Sale Date" in forecast_df.columns:
             sale_dates = pd.to_datetime(forecast_df["Sale Date"], errors="coerce").dropna()
             if not sale_dates.empty:
-                start_default = sale_dates.dt.date.min()
-                today_date = date.today()
-                max_picker_date = today_date if today_date >= start_default else start_default
-
-                if "projection_history_start" not in st.session_state:
-                    st.session_state["projection_history_start"] = start_default
-                if st.session_state["projection_history_start"] < start_default:
-                    st.session_state["projection_history_start"] = start_default
-
-                if st.session_state.get("projection_history_end_seed") != max_picker_date:
-                    st.session_state["projection_history_end"] = max_picker_date
-                    st.session_state["projection_history_end_seed"] = max_picker_date
-                elif "projection_history_end" not in st.session_state:
-                    st.session_state["projection_history_end"] = max_picker_date
-
-                if st.session_state["projection_history_end"] < start_default:
-                    st.session_state["projection_history_end"] = start_default
-
-                hist_col_l, hist_col_r = st.columns(2)
-                with hist_col_l:
-                    hist_start = st.date_input(
-                        "Historical start date",
-                        min_value=start_default,
-                        max_value=max_picker_date,
-                        key="projection_history_start",
-                    )
-                with hist_col_r:
-                    hist_end = st.date_input(
-                        "Historical end date",
-                        min_value=start_default,
-                        max_value=max_picker_date,
-                        key="projection_history_end",
-                    )
-
-                if hist_start > hist_end:
-                    hist_start, hist_end = hist_end, hist_start
-                    st.session_state["projection_history_start"] = hist_start
-                    st.session_state["projection_history_end"] = hist_end
-
-                forecast_df = forecast_df[
-                    (forecast_df["Sale Date"].dt.date >= hist_start)
-                    & (forecast_df["Sale Date"].dt.date <= hist_end)
-                ]
-                forecast_order_df = get_order_level_df(forecast_df)
-                st.caption(f"Historical range used for forecasting: {hist_start} to {hist_end}")
+                hist_start = sale_dates.dt.date.min()
+                hist_end = sale_dates.dt.date.max()
+                st.caption(
+                    f"Historical range used for forecasting (from global filters): {hist_start} to {hist_end}"
+                )
 
         subsection("Order Forecast")
         if forecast_order_df.empty or "Sale Date" not in forecast_order_df.columns or "Order ID" not in forecast_order_df.columns:

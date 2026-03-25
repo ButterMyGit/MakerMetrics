@@ -25,7 +25,7 @@ Total Orders, Units Sold, Net Revenue, Avg Order Value, Repeat Buyers, Unique Pr
 - **Sales Over Time** — monthly or weekly bars with a cumulative overlay
 - **Style Breakdown & Payment Methods** — paired donut charts
 - **US Sales by State** — choropleth map, switchable between orders, units, and revenue
-- **Sales Projection** — selectable historical training range, store frequency mode (daily vs intermittent), whole-order monthly forecasts, and per-item unit forecasts from known historical product lines
+- **Sales Projection** — uses your global date range filter, store frequency mode (daily vs intermittent), whole-order monthly forecasts, and per-item unit forecasts from known historical product lines
 - **Buyer Analysis** — repeat buyer table with VIP/Returning/New tiers
 - **Coupon Effectiveness** — usage counts, total discounts, and avg net with vs. without coupons
 - **Customer Segments** — behavior-based clustering

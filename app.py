@@ -191,6 +191,7 @@ BOOT_ICON = BOOT_SETTINGS.get("logo_path", "") if logo_path_is_valid(BOOT_SETTIN
 
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.api_core.exceptions import ResourceExhausted
 
 from watcher import WATCH_DIR, process_existing_csvs
 
@@ -489,7 +490,6 @@ def get_db():
     return firestore.client()
 
 
-@st.cache_data(ttl=15)
 def load_data() -> tuple[pd.DataFrame, str]:
     db   = get_db()
     docs = db.collection(SALES_COLLECTION).stream()
@@ -532,6 +532,61 @@ def load_data() -> tuple[pd.DataFrame, str]:
         df["Week"]       = df["Sale Date"].dt.to_period("W").astype(str)
 
     return df, load_time
+
+
+def processed_archive_marker() -> str:
+    processed_dir = WATCH_DIR / "processed"
+    if not processed_dir.is_dir():
+        return ""
+
+    latest_mtime_ns = 0
+    file_count = 0
+    for csv_path in processed_dir.glob("*.csv"):
+        try:
+            stat = csv_path.stat()
+        except OSError:
+            continue
+        file_count += 1
+        latest_mtime_ns = max(latest_mtime_ns, stat.st_mtime_ns)
+
+    return f"{file_count}:{latest_mtime_ns}"
+
+
+def get_dashboard_data(*, force_refresh: bool = False) -> tuple[pd.DataFrame, str]:
+    data_key = "dashboard_sales_data"
+    refresh_key = "dashboard_data_refresh_needed"
+    marker_key = "dashboard_processed_archive_marker"
+
+    has_cached = data_key in st.session_state
+    current_marker = processed_archive_marker()
+    previous_marker = st.session_state.get(marker_key, "")
+    archive_changed = has_cached and current_marker != previous_marker
+    should_refresh = force_refresh or st.session_state.get(refresh_key, False) or not has_cached or archive_changed
+
+    if should_refresh:
+        previous = st.session_state.get(data_key)
+        try:
+            df, load_time = load_data()
+        except ResourceExhausted:
+            if previous is not None:
+                st.warning(
+                    "Firestore quota is currently exhausted. Showing the last successfully loaded data."
+                )
+                st.session_state[refresh_key] = False
+                st.session_state[marker_key] = current_marker
+                cached_df = previous["df"].copy()
+                return cached_df, previous["load_time"]
+            raise
+
+        st.session_state[data_key] = {
+            "df": df.copy(),
+            "load_time": load_time,
+        }
+        st.session_state[refresh_key] = False
+        st.session_state[marker_key] = current_marker
+
+    cached = st.session_state[data_key]
+    return cached["df"].copy(), cached["load_time"]
 
 
 @st.cache_data(ttl=60)
@@ -1274,7 +1329,7 @@ def main():
         st_autorefresh(interval=20_000, key="dashboard_autorefresh")
 
     # ---- Load data ---------------------------------------------------------
-    df_all, load_time = load_data()
+    df_all, load_time = get_dashboard_data()
 
     # ---- Sidebar -----------------------------------------------------------
     with st.sidebar:
@@ -1329,6 +1384,7 @@ def main():
                 summary = process_sidebar_uploads(uploads)
             st.cache_data.clear()
             st.session_state["upload_result"] = summary
+            st.session_state["dashboard_data_refresh_needed"] = True
             st.rerun()
 
         if "upload_result" in st.session_state:
@@ -1345,6 +1401,7 @@ def main():
         st.divider()
         if st.button("Force refresh"):
             st.cache_data.clear()
+            st.session_state["dashboard_data_refresh_needed"] = True
             st.rerun()
         st.caption(f"Last loaded: {load_time}")
 

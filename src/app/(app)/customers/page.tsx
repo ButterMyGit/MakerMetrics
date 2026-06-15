@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useSalesData } from "@/hooks/use-sales-data";
 import {
   buyerStats,
+  computeKpis,
   couponAnalysis,
   customerKpis,
   fulfillmentStats,
@@ -32,6 +33,7 @@ export default function CustomersPage() {
   const [buyerFilter, setBuyerFilter] = useState<"all" | "repeat">("all");
 
   const kpis = useMemo(() => customerKpis(rows), [rows]);
+  const shopKpis = useMemo(() => computeKpis(rows), [rows]);
   const buyers = useMemo(() => buyerStats(rows), [rows]);
   const geo = useMemo(() => geoBreakdown(rows, geoMode), [rows, geoMode]);
   const coupons = useMemo(() => couponAnalysis(rows), [rows]);
@@ -71,6 +73,38 @@ export default function CustomersPage() {
           hint="Between repeat purchases"
         />
       </div>
+
+      {shopKpis.refundedOrders > 0 && (
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle>Refunds</CardTitle>
+            <CardDescription>
+              From your payments export. Refunds attach to their original order
+              and never count as new purchases.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid grid-cols-3 gap-3">
+            <div className="rounded-lg border p-3">
+              <p className="text-lg font-semibold tabular-nums">
+                {formatMoney(shopKpis.totalRefunds)}
+              </p>
+              <p className="text-xs text-muted-foreground">Total refunded</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-lg font-semibold tabular-nums">
+                {formatNumber(shopKpis.refundedOrders)}
+              </p>
+              <p className="text-xs text-muted-foreground">Orders refunded</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-lg font-semibold tabular-nums">
+                {formatPercent(shopKpis.refundRate)}
+              </p>
+              <p className="text-xs text-muted-foreground">Refund rate</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Card>

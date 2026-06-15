@@ -46,6 +46,7 @@ function row(overrides: Partial<SaleRow>): SaleRow {
     vatPaidByBuyer: null,
     inPersonDiscount: null,
     inPersonLocation: null,
+    refundAmount: null,
     orderType: null,
     paymentType: null,
     couponCode: null,
@@ -165,6 +166,23 @@ describe("computeKpis", () => {
     expect(k.uniqueBuyers).toBe(2);
     expect(k.repeatBuyerRate).toBeCloseTo(0.5); // jane has 2 orders
     expect(k.totalFees).toBeCloseTo(1.2 + 0.75 + 2);
+    expect(k.totalRefunds).toBe(0);
+    expect(k.refundedOrders).toBe(0);
+  });
+
+  it("aggregates refunds at the order level (no double counting per item)", () => {
+    // Order A has two line items; the refund lives on the order, not per item.
+    const refunded = ROWS.map((r) =>
+      r.orderId === "A" ? { ...r, refundAmount: 5 } : r
+    );
+    const k = computeKpis(refunded);
+    expect(k.totalRefunds).toBe(5);
+    expect(k.refundedOrders).toBe(1);
+    expect(k.refundRate).toBeCloseTo(1 / 3);
+    // Refunds must not change order/buyer counts or repeat status.
+    expect(k.orders).toBe(3);
+    expect(k.uniqueBuyers).toBe(2);
+    expect(k.repeatBuyerRate).toBeCloseTo(0.5);
   });
 });
 

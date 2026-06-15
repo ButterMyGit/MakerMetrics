@@ -4,16 +4,19 @@ import type { SaleItemDbRow } from "@/lib/types";
 /**
  * TypeScript port of the legacy watcher.py ingestion pipeline.
  *
- * Etsy provides three relevant CSV exports:
- *  - "EtsySoldOrderItems*.csv"  -> one row per transaction (line item)
- *  - "EtsySoldOrders*.csv"      -> one row per order with order-level financials
+ * Etsy provides several relevant CSV exports:
+ *  - "EtsySoldOrderItems*.csv"          -> one row per transaction (line item)
+ *  - "EtsySoldOrders*.csv"              -> one row per order with financials
  *  - a combined export with both item and order columns
+ *  - "EtsyDirectCheckoutPayments*.csv"  -> one row per payment, incl. refunds
  *
- * Items can be imported alone. Orders enrich items (joined on Order ID) but
- * cannot be imported alone, because all analytics are keyed by Transaction ID.
+ * Items can be imported alone. Orders and payments only *enrich* existing item
+ * rows (joined on Order ID); they never create rows. In particular, payments
+ * only contribute a refund amount onto the order they belong to — so a refund
+ * can never be mistaken for an extra purchase or bump a buyer's repeat status.
  */
 
-export type CsvFormat = "items" | "orders" | "combined" | "unknown";
+export type CsvFormat = "items" | "orders" | "combined" | "payments" | "unknown";
 
 export interface ParsedCsv {
   fileName: string;
@@ -26,6 +29,8 @@ export interface BuildResult {
   warnings: string[];
   /** item rows that had no matching order row (still imported) */
   unmatchedItems: number;
+  /** true when a payments file contributed refund data to this batch */
+  includesRefunds: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -58,9 +63,12 @@ export function detectFormat(headers: string[]): CsvFormat {
   const hasTid = has("Transaction ID");
   const hasItem = has("Item Name");
   const hasFull = has("Full Name");
+  const hasPaymentId = has("Payment ID");
+  const hasRefund = has("Refund Amount");
 
   if (hasTid && hasFull) return "combined";
   if (hasTid && hasItem) return "items";
+  if (hasPaymentId && hasRefund && !hasTid) return "payments";
   if (hasFull && !hasTid) return "orders";
   return "unknown";
 }
@@ -190,9 +198,28 @@ function buildOrderIndex(orderRows: Record<string, string>[]): Map<string, Order
   return index;
 }
 
+/**
+ * Map of Order ID -> total refunded, from payment exports. Multiple payments
+ * for one order are summed. Only the refund amount is taken; everything else
+ * in the payments file duplicates the orders export.
+ */
+function buildRefundIndex(paymentRows: Record<string, string>[]): Map<string, number> {
+  const index = new Map<string, number>();
+  for (const row of paymentRows) {
+    const get = makeGetter(row);
+    const orderId = cleanId(get("Order ID"));
+    if (!orderId) continue;
+    const refund = cleanMoney(get("Refund Amount")) ?? 0;
+    if (refund <= 0) continue;
+    index.set(orderId, (index.get(orderId) ?? 0) + refund);
+  }
+  return index;
+}
+
 function buildRowFromItem(
   row: Record<string, string>,
-  order: OrderInfo | undefined
+  order: OrderInfo | undefined,
+  refund: number | null
 ): SaleItemDbRow | null {
   const get = makeGetter(row);
 
@@ -244,6 +271,7 @@ function buildRowFromItem(
     in_person_location: cleanString(
       get("InPerson Location", "Item InPerson Location", "Order InPerson Location")
     ),
+    refund_amount: refund,
     order_type: cleanString(get("Order Type", "Item Order Type")),
     payment_type: cleanString(get("Payment Type", "Item Payment Type", "Payment Method")),
     coupon_code: cleanString(get("Coupon Code", "Order Coupon Code")),
@@ -269,6 +297,9 @@ export function buildSaleItems(files: ParsedCsv[]): BuildResult {
   const orderRows = files
     .filter((f) => f.format === "orders")
     .flatMap((f) => f.rows);
+  const paymentRows = files
+    .filter((f) => f.format === "payments")
+    .flatMap((f) => f.rows);
   const itemFiles = files.filter(
     (f) => f.format === "items" || f.format === "combined"
   );
@@ -276,7 +307,7 @@ export function buildSaleItems(files: ParsedCsv[]): BuildResult {
   for (const f of files) {
     if (f.format === "unknown") {
       warnings.push(
-        `"${f.fileName}" doesn't look like an Etsy sold-orders export and was skipped.`
+        `"${f.fileName}" doesn't look like a supported Etsy export and was skipped.`
       );
     }
   }
@@ -285,8 +316,15 @@ export function buildSaleItems(files: ParsedCsv[]): BuildResult {
       "An orders CSV was provided without an order *items* CSV. Orders alone can't be imported — also upload the matching EtsySoldOrderItems export."
     );
   }
+  const includesRefunds = paymentRows.length > 0;
+  if (includesRefunds && itemFiles.length === 0) {
+    warnings.push(
+      "A payments CSV was provided without an order *items* CSV. Refunds attach to existing orders — also upload the matching EtsySoldOrderItems export."
+    );
+  }
 
   const orderIndex = buildOrderIndex(orderRows);
+  const refundIndex = buildRefundIndex(paymentRows);
   const byTransaction = new Map<string, SaleItemDbRow>();
   let unmatchedItems = 0;
   let skippedNoTid = 0;
@@ -298,7 +336,13 @@ export function buildSaleItems(files: ParsedCsv[]): BuildResult {
       const order = orderId ? orderIndex.get(orderId) : undefined;
       if (orderRows.length > 0 && !order) unmatchedItems++;
 
-      const built = buildRowFromItem(raw, order);
+      // Refund is an order-level value; every line item of the order carries
+      // it (read at order level), mirroring how order_net is denormalized.
+      const refund = includesRefunds
+        ? (orderId && refundIndex.get(orderId)) || null
+        : null;
+
+      const built = buildRowFromItem(raw, order, refund);
       if (!built) {
         skippedNoTid++;
         continue;
@@ -316,5 +360,5 @@ export function buildSaleItems(files: ParsedCsv[]): BuildResult {
     );
   }
 
-  return { rows: [...byTransaction.values()], warnings, unmatchedItems };
+  return { rows: [...byTransaction.values()], warnings, unmatchedItems, includesRefunds };
 }

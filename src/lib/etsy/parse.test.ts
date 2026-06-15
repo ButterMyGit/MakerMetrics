@@ -101,3 +101,44 @@ describe("buildSaleItems", () => {
     expect(rows).toHaveLength(3);
   });
 });
+
+const PAYMENTS_CSV = `"Payment ID","Buyer Username","Buyer Name","Order ID","Gross Amount",Fees,"Net Amount",Currency,Status,"Order Date",Buyer,"Order Type","Payment Type","Refund Amount"
+900001,coolbuyer42@example.com,"Jane Doe",3001,13.00,1.20,16.30,USD,SETTLED,08/14/2026,"Jane Doe",online,online_cc,2.50
+900002,otherbuyer@example.com,"Bob Roe",3002,5.00,0.75,8.25,USD,SETTLED,09/02/2026,"Bob Roe",online,paypal,0.00`;
+
+describe("payments / refunds", () => {
+  it("detects the payments format", () => {
+    expect(parse("pay.csv", PAYMENTS_CSV).format).toBe("payments");
+  });
+
+  it("attaches refunds to existing orders without creating rows", () => {
+    const { rows, includesRefunds } = buildSaleItems([
+      parse("items.csv", ITEMS_CSV),
+      parse("pay.csv", PAYMENTS_CSV),
+    ]);
+    expect(includesRefunds).toBe(true);
+    // Still exactly the 3 item rows — payments never add rows.
+    expect(rows).toHaveLength(3);
+
+    // Order 3001 has two line items; both carry the order-level refund.
+    const order3001 = rows.filter((r) => r.order_id === "3001");
+    expect(order3001).toHaveLength(2);
+    for (const r of order3001) expect(r.refund_amount).toBe(2.5);
+
+    // A zero refund stays null (no refund), not 0-as-value.
+    const order3002 = rows.find((r) => r.order_id === "3002")!;
+    expect(order3002.refund_amount).toBeNull();
+  });
+
+  it("cannot be imported alone (refunds only enrich items)", () => {
+    const { rows, warnings } = buildSaleItems([parse("pay.csv", PAYMENTS_CSV)]);
+    expect(rows).toHaveLength(0);
+    expect(warnings.some((w) => w.toLowerCase().includes("refund"))).toBe(true);
+  });
+
+  it("leaves refund_amount null when no payments file is present", () => {
+    const { rows, includesRefunds } = buildSaleItems([parse("items.csv", ITEMS_CSV)]);
+    expect(includesRefunds).toBe(false);
+    expect(rows.every((r) => r.refund_amount === null)).toBe(true);
+  });
+});

@@ -61,6 +61,11 @@ export function orderFeesOf(r: SaleRow): number {
   return adjustment(r.adjustedCardProcessingFees) ?? r.cardProcessingFees ?? 0;
 }
 
+/** Refund total for one order (0 when none). */
+export function orderRefundOf(r: SaleRow): number {
+  return r.refundAmount ?? 0;
+}
+
 /** One representative row per order (first transaction of each order). */
 export function orderLevel(rows: SaleRow[]): SaleRow[] {
   const seen = new Set<string>();
@@ -126,6 +131,10 @@ export interface Kpis {
   totalFees: number;
   totalDiscounts: number;
   shippingCollected: number;
+  totalRefunds: number;
+  refundedOrders: number;
+  /** share of orders with any refund */
+  refundRate: number | null;
 }
 
 export function computeKpis(rows: SaleRow[]): Kpis {
@@ -145,6 +154,9 @@ export function computeKpis(rows: SaleRow[]): Kpis {
 
   const products = new Set(rows.map((r) => r.cardName ?? r.itemName).filter(Boolean));
 
+  const totalRefunds = orders.reduce((s, r) => s + orderRefundOf(r), 0);
+  const refundedOrders = orders.filter((r) => orderRefundOf(r) > 0).length;
+
   return {
     orders: orders.length,
     units,
@@ -160,6 +172,9 @@ export function computeKpis(rows: SaleRow[]): Kpis {
       0
     ),
     shippingCollected: orders.reduce((s, r) => s + (r.shipping ?? 0), 0),
+    totalRefunds,
+    refundedOrders,
+    refundRate: orders.length > 0 ? refundedOrders / orders.length : null,
   };
 }
 
@@ -724,6 +739,7 @@ export interface OrderSummary {
   units: number;
   orderTotal: number | null;
   orderNet: number;
+  refund: number;
   couponCode: string | null;
   shipLocation: string | null;
   orderType: string | null;
@@ -754,6 +770,7 @@ export function buildOrderHistory(rows: SaleRow[]): OrderSummary[] {
       units: items.reduce((s, i) => s + (i.quantity || 0), 0),
       orderTotal: first.orderTotal,
       orderNet: orderNetOf(first),
+      refund: orderRefundOf(first),
       couponCode: first.couponCode,
       shipLocation: first.shipState
         ? `${first.shipCity ?? ""}${first.shipCity ? ", " : ""}${first.shipState}`

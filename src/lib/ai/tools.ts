@@ -62,6 +62,7 @@ export function buildAnalystTools(rows: SaleRow[]) {
           totalFees: round2(k.totalFees),
           totalDiscounts: round2(k.totalDiscounts),
           shippingCollected: round2(k.shippingCollected),
+          totalRefunds: round2(k.totalRefunds),
         };
       },
     }),

@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local runtime dirs (legacy Python app data, secrets, settings)
+/data/
+/secrets/
+/settings/
+/scripts/
+/web/
+__pycache__/

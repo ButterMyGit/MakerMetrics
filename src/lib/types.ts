@@ -33,6 +33,8 @@ export interface SaleRow {
   vatPaidByBuyer: number | null;
   inPersonDiscount: number | null;
   inPersonLocation: string | null;
+  /** Order-level refund total (from EtsyDirectCheckoutPayments). */
+  refundAmount: number | null;
 
   orderType: string | null;
   paymentType: string | null;
@@ -81,6 +83,7 @@ export interface SaleItemDbRow {
   vat_paid_by_buyer: number | null;
   in_person_discount: number | null;
   in_person_location: string | null;
+  refund_amount: number | null;
   order_type: string | null;
   payment_type: string | null;
   coupon_code: string | null;
@@ -126,6 +129,7 @@ export function dbRowToSaleRow(r: SaleItemDbRow): SaleRow {
     vatPaidByBuyer: r.vat_paid_by_buyer,
     inPersonDiscount: r.in_person_discount,
     inPersonLocation: r.in_person_location,
+    refundAmount: r.refund_amount,
     orderType: r.order_type,
     paymentType: r.payment_type,
     couponCode: r.coupon_code,

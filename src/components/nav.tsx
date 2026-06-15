@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { createClient } from "@/lib/supabase/client";
+import { useProfile } from "@/hooks/use-profile";
 import { useState } from "react";
 
 const NAV_ITEMS = [
@@ -44,14 +45,22 @@ function useSignOut() {
 export function DesktopSidebar() {
   const pathname = usePathname();
   const signOut = useSignOut();
+  const { shopName } = useProfile();
 
   return (
     <aside className="hidden lg:flex w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
       <div className="flex items-center gap-2.5 px-5 py-5">
-        <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
           <BarChart3 className="size-4" />
         </div>
-        <span className="text-base font-semibold tracking-tight">MakerMetrics</span>
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate text-base font-semibold tracking-tight">
+            {shopName || "MakerMetrics"}
+          </span>
+          {shopName && (
+            <span className="truncate text-xs text-muted-foreground">MakerMetrics</span>
+          )}
+        </div>
       </div>
       <nav className="flex flex-1 flex-col gap-1 px-3">
         {NAV_ITEMS.map((item) => {

@@ -91,6 +91,14 @@ export default function OrdersPage() {
                     {o.couponCode}
                   </Badge>
                 )}
+                {o.refund > 0 && (
+                  <Badge
+                    variant="secondary"
+                    className="bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                  >
+                    Refunded
+                  </Badge>
+                )}
               </div>
               <p className="mt-0.5 truncate text-xs text-muted-foreground">
                 {o.itemsLabel}
@@ -171,6 +179,7 @@ export default function OrdersPage() {
                       ["Shipping collected", selected.rows[0].shipping],
                       ["Sales tax", selected.rows[0].salesTax],
                       ["Processing fees", selected.rows[0].cardProcessingFees],
+                      ["Refunded", selected.refund || null],
                     ] as const
                   ).map(
                     ([label, value]) =>

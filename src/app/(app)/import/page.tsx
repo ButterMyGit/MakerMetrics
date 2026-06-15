@@ -21,6 +21,7 @@ const FORMAT_LABELS: Record<ParsedCsv["format"], { label: string; tone: "ok" | "
   items: { label: "Order items", tone: "ok" },
   orders: { label: "Orders", tone: "ok" },
   combined: { label: "Combined export", tone: "ok" },
+  payments: { label: "Payments (refunds)", tone: "ok" },
   unknown: { label: "Unrecognized", tone: "warn" },
 };
 
@@ -63,7 +64,13 @@ export default function ImportPage() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Not signed in");
 
-      const rows = result.rows.map((r) => ({ ...r, user_id: user.id }));
+      // Without a payments file in this batch, don't send refund_amount at all,
+      // so a prior refund import isn't overwritten with null.
+      const rows = result.rows.map((r) => {
+        const row: Record<string, unknown> = { ...r, user_id: user.id };
+        if (!result.includesRefunds) delete row.refund_amount;
+        return row;
+      });
       for (let i = 0; i < rows.length; i += BATCH_SIZE) {
         const batch = rows.slice(i, i + BATCH_SIZE);
         const { error } = await supabase

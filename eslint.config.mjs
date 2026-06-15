@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Legacy Python app and stray build artifacts that aren't part of the app.
+    "legacy/**",
+    "web/**",
   ]),
 ]);
 

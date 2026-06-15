@@ -30,19 +30,35 @@ export function buyerDisplayName(r: SaleRow): string {
   return r.fullName ?? r.buyerUsername ?? "Unknown buyer";
 }
 
+/**
+ * Etsy only fills the "Adjusted *" columns when an order was actually
+ * adjusted (refund/cancellation); otherwise they are 0.00. So a 0 in an
+ * adjusted field means "no adjustment", not "$0 of value" — only trust it
+ * when it's non-zero.
+ */
+function adjustment(v: number | null | undefined): number | null {
+  return v != null && v !== 0 ? v : null;
+}
+
 /** Net for a single order row, with fallbacks for partial data. */
 export function orderNetOf(r: SaleRow): number {
-  if (r.adjustedNetOrderAmount != null) return r.adjustedNetOrderAmount;
+  const adjusted = adjustment(r.adjustedNetOrderAmount);
+  if (adjusted != null) return adjusted;
   if (r.orderNet != null) return r.orderNet;
-  if (r.orderTotal != null)
-    return r.orderTotal - (r.cardProcessingFees ?? 0);
+  if (r.orderTotal != null) return r.orderTotal - (r.cardProcessingFees ?? 0);
   return r.itemTotal ?? 0;
 }
 
 export function orderGrossOf(r: SaleRow): number {
-  if (r.adjustedOrderTotal != null) return r.adjustedOrderTotal;
+  const adjusted = adjustment(r.adjustedOrderTotal);
+  if (adjusted != null) return adjusted;
   if (r.orderTotal != null) return r.orderTotal;
   return r.itemTotal ?? 0;
+}
+
+/** Etsy processing fees for one order, ignoring zero "adjusted" placeholders. */
+export function orderFeesOf(r: SaleRow): number {
+  return adjustment(r.adjustedCardProcessingFees) ?? r.cardProcessingFees ?? 0;
 }
 
 /** One representative row per order (first transaction of each order). */
@@ -138,10 +154,7 @@ export function computeKpis(rows: SaleRow[]): Kpis {
     uniqueBuyers,
     repeatBuyerRate: uniqueBuyers > 0 ? repeatBuyers / uniqueBuyers : null,
     uniqueProducts: products.size,
-    totalFees: orders.reduce(
-      (s, r) => s + (r.adjustedCardProcessingFees ?? r.cardProcessingFees ?? 0),
-      0
-    ),
+    totalFees: orders.reduce((s, r) => s + orderFeesOf(r), 0),
     totalDiscounts: orders.reduce(
       (s, r) => s + (r.discountAmount ?? 0) + (r.shippingDiscount ?? 0),
       0

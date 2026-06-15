@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SalesDataProvider } from "@/hooks/use-sales-data";
 import { ProfileProvider } from "@/hooks/use-profile";
+import { AccentProvider } from "@/components/accent-provider";
 import { DesktopSidebar, MobileTabBar } from "@/components/nav";
 
 export default async function AppLayout({
@@ -16,12 +17,20 @@ export default async function AppLayout({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("shop_name")
+    .select("shop_name, settings")
     .eq("user_id", user.id)
     .maybeSingle();
 
+  const savedAccent =
+    typeof profile?.settings === "object" &&
+    profile.settings !== null &&
+    typeof (profile.settings as Record<string, unknown>).accent === "string"
+      ? (profile.settings as Record<string, string>).accent
+      : null;
+
   return (
     <ProfileProvider initialShopName={profile?.shop_name ?? null} email={user.email ?? null}>
+    <AccentProvider initialAccent={savedAccent}>
       <SalesDataProvider>
         <div className="flex min-h-dvh w-full">
           <DesktopSidebar />
@@ -33,6 +42,7 @@ export default async function AppLayout({
           <MobileTabBar />
         </div>
       </SalesDataProvider>
+    </AccentProvider>
     </ProfileProvider>
   );
 }

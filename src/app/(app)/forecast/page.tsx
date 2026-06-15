@@ -29,19 +29,23 @@ function toChartData(result: ForecastResult) {
   const historyTail = result.history.slice(-18);
   const rows: Record<string, number | string | null>[] = historyTail.map((p) => ({
     month: p.month,
-    actual: p.value,
+    // estimated = current partial month scaled up; shown differently
+    actual: p.estimated ? null : p.value,
+    estimated: p.estimated ? p.value : null,
     forecast: null,
     lower: null,
     upper: null,
   }));
   // bridge point so the dashed line connects to history
   if (rows.length > 0 && result.forecast.length > 0) {
-    rows[rows.length - 1].forecast = historyTail[historyTail.length - 1].value;
+    const last = historyTail[historyTail.length - 1];
+    rows[rows.length - 1].forecast = last.estimated ? last.value : last.value;
   }
   for (const f of result.forecast) {
     rows.push({
       month: f.month,
       actual: null,
+      estimated: null,
       forecast: f.value,
       lower: f.lower,
       upper: f.upper,

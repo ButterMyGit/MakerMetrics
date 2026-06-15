@@ -6,6 +6,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useSalesData } from "@/hooks/use-sales-data";
 import { PageHeader } from "@/components/page-header";
+import { AccentPicker } from "@/components/accent-picker";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -91,6 +92,18 @@ export default function SettingsPage() {
                 Save
               </Button>
             </form>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Appearance</CardTitle>
+            <CardDescription>
+              Pick the accent color used across charts and highlights.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AccentPicker />
           </CardContent>
         </Card>
 

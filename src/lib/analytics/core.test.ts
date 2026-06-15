@@ -10,6 +10,7 @@ import {
   geoBreakdown,
   monthlySeries,
   orderLevel,
+  orderNetOf,
   productStats,
 } from "./core";
 
@@ -133,6 +134,24 @@ const ROWS: SaleRow[] = [
 describe("orderLevel", () => {
   it("dedupes line items to one row per order", () => {
     expect(orderLevel(ROWS)).toHaveLength(3);
+  });
+});
+
+describe("orderNetOf", () => {
+  it("ignores zero 'Adjusted Net' placeholders and uses Order Net", () => {
+    // Etsy leaves Adjusted* = 0 on un-adjusted orders; must not zero out revenue.
+    const r = row({ orderNet: 41.33, adjustedNetOrderAmount: 0, orderTotal: 46.02 });
+    expect(orderNetOf(r)).toBeCloseTo(41.33);
+  });
+
+  it("uses a non-zero Adjusted Net when an order was actually adjusted", () => {
+    const r = row({ orderNet: 41.33, adjustedNetOrderAmount: 20 });
+    expect(orderNetOf(r)).toBe(20);
+  });
+
+  it("falls back to order total minus fees, then item total", () => {
+    expect(orderNetOf(row({ orderTotal: 50, cardProcessingFees: 5 }))).toBe(45);
+    expect(orderNetOf(row({ itemTotal: 12 }))).toBe(12);
   });
 });
 

@@ -40,10 +40,22 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# local runtime dirs (legacy Python app data, secrets, settings)
+# local runtime dirs, secrets, and settings
 /data/
 /secrets/
 /settings/
 /scripts/
 /web/
 __pycache__/
+
+# local agent instructions and workspace metadata
+/AGENTS.md
+/CLAUDE.md
+/.agents/
+/.codex/
+
+# private database migration history
+/supabase/migrations/
+
+# retired local prototype
+/legacy/

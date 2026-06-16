@@ -2,26 +2,33 @@ import type { SaleRow } from "@/lib/types";
 import { monthlySeries, productStats } from "./core";
 
 /**
- * Monthly forecasting via classical multiplicative decomposition:
+ * Monthly forecasting with two regimes:
  *
- *   value(t) = level(t) x seasonalIndex(monthOfYear) + noise
+ * SHORT HISTORY (< 12 complete months):
+ *   Simple exponential smoothing (level only, no trend). Robust when data is
+ *   sparse and month-to-month swings are large. The previous Theil-Sen+trend
+ *   approach computed a heavily negative slope on zero-padded gap months (e.g.
+ *   [1500, 0, 0, 900, 800]), producing "laughably low" forecasts.
  *
- * - Seasonal indices come from ratio-to-moving-average (needs 24+ months) or
- *   ratio-to-median (12-23 months). Under 12 months no seasonality is used.
- * - The level/trend is a Theil-Sen robust line over the deseasonalized series,
- *   with the slope damped as the horizon grows (long-range extrapolation of a
- *   small shop's trend is mostly noise).
- * - Accuracy is reported honestly: a walk-forward backtest over the last
- *   months of history, compared against a seasonal-naive benchmark.
+ * LONG HISTORY (12+ complete months):
+ *   Classical multiplicative decomposition:
+ *     value(t) = level(t) × seasonalIndex(month) + noise
+ *   Seasonal indices from ratio-to-moving-average (24+ months) or ratio-to-
+ *   median (12-23 months). Level/trend estimated by Theil-Sen on non-zero
+ *   deseasonalized values only, with a mild damping factor.
  *
- * This consistently behaves better than daily-grain Holt-Winters on sparse
- * Etsy sales (the legacy approach), which over-fits weekly seasonality and
- * explodes on zero-heavy days.
+ * Current partial month: scaled to a full-month estimate (actuals ×
+ * daysInMonth / dayOfMonth) rather than dropped, so recent momentum is
+ * reflected. The chart labels it as an estimate.
+ *
+ * Accuracy is measured with a walk-forward backtest vs. a seasonal-naive
+ * benchmark and shown on the forecast page.
  */
 
 export interface SeriesPoint {
   month: string; // YYYY-MM
   value: number;
+  estimated?: boolean; // true for the scaled current partial month
 }
 
 export interface ForecastPoint extends SeriesPoint {
@@ -47,6 +54,23 @@ export interface ForecastResult {
 
 // ---------------------------------------------------------------------------
 
+function monthOfYear(ym: string): number {
+  return Number(ym.split("-")[1]); // 1..12
+}
+
+function addMonths(ym: string, k: number): string {
+  const [y, m] = ym.split("-").map(Number);
+  const total = y * 12 + (m - 1) + k;
+  const ny = Math.floor(total / 12);
+  const nm = (total % 12) + 1;
+  return `${ny}-${String(nm).padStart(2, "0")}`;
+}
+
+function daysInMonth(ym: string): number {
+  const [y, m] = ym.split("-").map(Number);
+  return new Date(y, m, 0).getDate();
+}
+
 function theilSen(values: number[]): { slope: number; intercept: number } {
   const n = values.length;
   if (n === 1) return { slope: 0, intercept: values[0] };
@@ -63,18 +87,6 @@ function theilSen(values: number[]): { slope: number; intercept: number } {
   return { slope, intercept };
 }
 
-function monthOfYear(ym: string): number {
-  return Number(ym.split("-")[1]); // 1..12
-}
-
-function addMonths(ym: string, k: number): string {
-  const [y, m] = ym.split("-").map(Number);
-  const total = y * 12 + (m - 1) + k;
-  const ny = Math.floor(total / 12);
-  const nm = (total % 12) + 1;
-  return `${ny}-${String(nm).padStart(2, "0")}`;
-}
-
 /** Seasonal indices (length 13, 1-indexed by calendar month), normalized to mean 1. */
 function seasonalIndices(series: SeriesPoint[]): { indices: number[]; source: string } {
   const n = series.length;
@@ -84,7 +96,6 @@ function seasonalIndices(series: SeriesPoint[]): { indices: number[]; source: st
   const ratiosByMonth: number[][] = Array.from({ length: 13 }, () => []);
 
   if (n >= 24) {
-    // ratio to 12-month centered moving average
     for (let i = 6; i < n - 6; i++) {
       let sum = 0;
       for (let j = i - 6; j < i + 6; j++) sum += series[j].value;
@@ -92,7 +103,6 @@ function seasonalIndices(series: SeriesPoint[]): { indices: number[]; source: st
       if (ma > 0) ratiosByMonth[monthOfYear(series[i].month)].push(series[i].value / ma);
     }
   } else {
-    // ratio to overall median (shorter histories)
     const sorted = series.map((p) => p.value).sort((a, b) => a - b);
     const med = sorted[Math.floor(sorted.length / 2)];
     if (med <= 0) return flat;
@@ -105,27 +115,113 @@ function seasonalIndices(series: SeriesPoint[]): { indices: number[]; source: st
     const r = ratiosByMonth[m];
     if (r.length > 0) {
       r.sort((a, b) => a - b);
-      indices[m] = r[Math.floor(r.length / 2)]; // median ratio
+      indices[m] = r[Math.floor(r.length / 2)];
       observed.push(indices[m]);
     }
   }
-  // normalize observed indices to mean 1
   const mean = observed.reduce((s, v) => s + v, 0) / observed.length;
   if (mean > 0) for (let m = 1; m <= 12; m++) indices[m] /= mean;
 
   return { indices, source: n >= 24 ? "ratio-to-moving-average" : "ratio-to-median" };
 }
 
-function fitAndForecast(
+// ---------------------------------------------------------------------------
+// Short-history model: simple exponential smoothing (level only)
+// ---------------------------------------------------------------------------
+
+function fitSES(
+  series: SeriesPoint[],
+  horizon: number,
+  alpha = 0.3
+): { forecast: ForecastPoint[]; fitted: number[]; method: string } {
+  const n = series.length;
+  const lastMonth = series[n - 1].month;
+
+  let level = series[0].value;
+  const fitted = [level];
+  for (let i = 1; i < n; i++) {
+    level = alpha * series[i].value + (1 - alpha) * level;
+    fitted.push(level);
+  }
+
+  const forecast: ForecastPoint[] = Array.from({ length: horizon }, (_, h) => ({
+    month: addMonths(lastMonth, h + 1),
+    value: Math.max(0, level),
+    lower: Math.max(0, level),
+    upper: Math.max(0, level),
+  }));
+
+  return { forecast, fitted, method: `exponential smoothing (α=${alpha}, short history)` };
+}
+
+// ---------------------------------------------------------------------------
+// Long-history model: seasonal decomposition + damped Theil-Sen
+// ---------------------------------------------------------------------------
+
+function fitDecomposition(
   series: SeriesPoint[],
   horizon: number
 ): { forecast: ForecastPoint[]; fitted: number[]; method: string } {
   const n = series.length;
   const lastMonth = series[n - 1].month;
 
+  const { indices, source } = seasonalIndices(series);
+  const deseason = series.map((p) => p.value / (indices[monthOfYear(p.month)] || 1));
+
+  // Only include non-zero months in the slope estimate — zeros are structural
+  // gap-fills, not real data points, and dominate Theil-Sen negatively.
+  const nonZeroIdxs = deseason
+    .map((v, i) => (v > 0 ? i : -1))
+    .filter((i) => i >= 0);
+
+  let slope = 0;
+  let level = deseason[n - 1];
+
+  if (nonZeroIdxs.length >= 2) {
+    const nonZeroValues = nonZeroIdxs.map((i) => deseason[i]);
+    // Re-index so positions are 0..k for Theil-Sen
+    const reindexed = nonZeroIdxs.map((absIdx, k) => ({ absIdx, k, v: nonZeroValues[k] }));
+    const ts = theilSen(reindexed.map((r) => r.v));
+    slope = ts.slope;
+    // Level at the last data point's position in the non-zero subsequence
+    const lastNonZeroK = reindexed[reindexed.length - 1].k;
+    level = ts.intercept + ts.slope * lastNonZeroK;
+  }
+
+  const fitted = series.map((p, i) => {
+    const s = indices[monthOfYear(p.month)] || 1;
+    return Math.max(0, deseason[i] * s);
+  });
+
+  const damp = 0.95;
+  const forecast: ForecastPoint[] = [];
+  let cumSlope = 0;
+  for (let h = 1; h <= horizon; h++) {
+    cumSlope += slope * Math.pow(damp, h);
+    const month = addMonths(lastMonth, h);
+    const value = Math.max(0, (level + cumSlope) * (indices[monthOfYear(month)] || 1));
+    forecast.push({ month, value, lower: value, upper: value });
+  }
+
+  const method =
+    source === "none"
+      ? "exponential smoothing (under 12 months)"
+      : `seasonal decomposition (${source}) + damped trend`;
+
+  return { forecast, fitted, method };
+}
+
+// ---------------------------------------------------------------------------
+
+function fitAndForecast(
+  series: SeriesPoint[],
+  horizon: number
+): { forecast: ForecastPoint[]; fitted: number[]; method: string } {
+  const n = series.length;
+
   if (n < 4) {
-    // too little data: flat average
     const avg = series.reduce((s, p) => s + p.value, 0) / Math.max(n, 1);
+    const lastMonth = series[n - 1]?.month ?? "2000-01";
     return {
       forecast: Array.from({ length: horizon }, (_, h) => ({
         month: addMonths(lastMonth, h + 1),
@@ -138,37 +234,12 @@ function fitAndForecast(
     };
   }
 
-  const { indices, source } = seasonalIndices(series);
-  const deseason = series.map((p) => p.value / (indices[monthOfYear(p.month)] || 1));
-
-  // Robust trend on the recent window (older regime changes shouldn't dominate)
-  const window = Math.min(deseason.length, 24);
-  const recent = deseason.slice(-window);
-  const { slope, intercept } = theilSen(recent);
-  const level = intercept + slope * (recent.length - 1);
-
-  const fitted = series.map((p, i) => {
-    const offset = i - (n - window);
-    const lv = offset >= 0 ? intercept + slope * offset : deseason[i];
-    return Math.max(0, lv * (indices[monthOfYear(p.month)] || 1));
-  });
-
-  const damp = 0.92; // each extra month forward trusts the trend less
-  const forecast: ForecastPoint[] = [];
-  let cumSlope = 0;
-  for (let h = 1; h <= horizon; h++) {
-    cumSlope += slope * Math.pow(damp, h);
-    const month = addMonths(lastMonth, h);
-    const value = Math.max(0, (level + cumSlope) * (indices[monthOfYear(month)] || 1));
-    forecast.push({ month, value, lower: value, upper: value });
+  // Short history: SES avoids the negative-slope trap from zero-padded gaps.
+  if (n < 12) {
+    return fitSES(series, horizon);
   }
 
-  const method =
-    source === "none"
-      ? "damped trend (under 12 months of history; no seasonality)"
-      : `seasonal decomposition (${source}) + damped robust trend`;
-
-  return { forecast, fitted, method };
+  return fitDecomposition(series, horizon);
 }
 
 function applyIntervals(
@@ -181,12 +252,10 @@ function applyIntervals(
     .filter((r) => Number.isFinite(r));
   const sd =
     residuals.length > 1
-      ? Math.sqrt(
-          residuals.reduce((s, r) => s + r * r, 0) / (residuals.length - 1)
-        )
+      ? Math.sqrt(residuals.reduce((s, r) => s + r * r, 0) / (residuals.length - 1))
       : 0;
   forecast.forEach((f, h) => {
-    const spread = 1.28 * sd * Math.sqrt(1 + h * 0.35); // ~80% interval, widening
+    const spread = 1.28 * sd * Math.sqrt(1 + h * 0.35);
     f.lower = Math.max(0, f.value - spread);
     f.upper = f.value + spread;
   });
@@ -194,7 +263,7 @@ function applyIntervals(
 
 function backtest(series: SeriesPoint[]): BacktestResult {
   const n = series.length;
-  const k = Math.min(6, n - 8); // hold out up to 6 months, keep >= 8 to train
+  const k = Math.min(6, n - 4); // hold out up to 6 months, keep >= 4 to train
   if (k < 2) return { monthsTested: 0, mape: null, seasonalNaiveMape: null };
 
   const modelErrors: number[] = [];
@@ -227,15 +296,25 @@ function backtest(series: SeriesPoint[]): BacktestResult {
 export function forecastSeries(series: SeriesPoint[], horizon = 6): ForecastResult {
   const notes: string[] = [];
 
-  // drop the current partial month from training if it's clearly incomplete
-  const trimmed = [...series];
+  // Scale the current partial month up to a projected full-month value instead
+  // of dropping it. This keeps recent momentum in the model — e.g. if this
+  // month is tracking above average, the forecast should reflect that.
   const nowYm = new Date().toISOString().slice(0, 7);
-  if (trimmed.length > 1 && trimmed[trimmed.length - 1].month === nowYm) {
-    notes.push("The current (incomplete) month is excluded from model training.");
-    trimmed.pop();
-  }
+  const today = new Date().getDate();
+  const training = series.map((p) => {
+    if (p.month !== nowYm) return p;
+    const days = daysInMonth(p.month);
+    if (today < days && today > 0) {
+      const scaled = Math.round((p.value / today) * days * 100) / 100;
+      notes.push(
+        `${nowYm} is incomplete (day ${today} of ${days}). The current month is scaled to an estimated full-month value of ${scaled.toFixed(0)} for model training, shown as a dotted bar on the chart.`
+      );
+      return { month: p.month, value: scaled, estimated: true };
+    }
+    return p;
+  });
 
-  if (trimmed.length === 0) {
+  if (training.length === 0) {
     return {
       history: series,
       forecast: [],
@@ -245,20 +324,20 @@ export function forecastSeries(series: SeriesPoint[], horizon = 6): ForecastResu
     };
   }
 
-  const { forecast, fitted, method } = fitAndForecast(trimmed, horizon);
-  applyIntervals(trimmed, fitted, forecast);
+  const { forecast, fitted, method } = fitAndForecast(training, horizon);
+  applyIntervals(training, fitted, forecast);
 
-  if (trimmed.length < 12) {
+  if (training.length < 12) {
     notes.push(
-      "Less than 12 months of history — seasonal patterns (e.g. holiday spikes) can't be learned yet."
+      "Under 12 months of history — seasonal patterns can't be learned yet. Forecasts reflect recent average momentum."
     );
-  } else if (trimmed.length < 24) {
+  } else if (training.length < 24) {
     notes.push(
-      "Seasonality is estimated from a single year of history; expect it to improve with a second year of data."
+      "Seasonality estimated from one year of history; accuracy improves with a second year."
     );
   }
 
-  return { history: series, forecast, method, backtest: backtest(trimmed), notes };
+  return { history: series, forecast, method, backtest: backtest(training), notes };
 }
 
 // ---------------------------------------------------------------------------
@@ -294,13 +373,6 @@ export interface ItemForecast {
   basis: "last-year + recent mix" | "recent mix";
 }
 
-/**
- * Per-product next-month estimates. Total units are forecast with the shop
- * model, then allocated by a blend of (a) each product's unit share in the
- * same calendar month last year and (b) its share over the trailing 90 days.
- * This avoids the legacy failure mode of fitting an independent noisy model
- * per product.
- */
 export function itemForecasts(rows: SaleRow[], limit = 15): ItemForecast[] {
   const unitSeries = monthlySeries(rows).map((p) => ({
     month: p.month,
@@ -315,10 +387,8 @@ export function itemForecasts(rows: SaleRow[], limit = 15): ItemForecast[] {
   const active = stats.filter((p) => p.trend !== "dormant");
   if (active.length === 0) return [];
 
-  // share over trailing 90 days
   const recentTotal = active.reduce((s, p) => s + p.recentUnits, 0);
 
-  // share in the same calendar month last year
   const targetMonth = addMonths(nextMonth.month, -12);
   const lyUnits = new Map<string, number>();
   let lyTotal = 0;

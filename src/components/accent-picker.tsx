@@ -6,9 +6,9 @@ import {
   ACCENT_PRESETS,
   getAccent,
   getServerAccent,
-  setAccent,
   subscribeAccent,
 } from "@/lib/theme/accent-store";
+import { setAccentPersisted } from "@/components/accent-provider";
 import { cn } from "@/lib/utils";
 
 export function AccentPicker() {
@@ -26,7 +26,7 @@ export function AccentPicker() {
             type="button"
             title={preset.name}
             aria-label={preset.name}
-            onClick={() => setAccent(preset.value)}
+            onClick={() => void setAccentPersisted(preset.value)}
             className={cn(
               "flex size-9 items-center justify-center rounded-full transition-transform hover:scale-110",
               selected && "ring-2 ring-offset-2 ring-offset-background"
@@ -64,7 +64,7 @@ export function AccentPicker() {
           ref={colorInputRef}
           type="color"
           value={accent}
-          onChange={(e) => setAccent(e.target.value)}
+          onChange={(e) => void setAccentPersisted(e.target.value)}
           className="absolute inset-0 size-full cursor-pointer opacity-0"
           aria-hidden
           tabIndex={-1}

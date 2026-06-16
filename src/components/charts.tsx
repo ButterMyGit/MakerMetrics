@@ -215,7 +215,7 @@ export function ForecastChart({
   money = false,
   height = 300,
 }: {
-  /** rows with: month, actual?, forecast?, lower?, upper? */
+  /** rows with: month, actual?, estimated?, forecast?, lower?, upper? */
   data: Record<string, number | string | null>[];
   money?: boolean;
   height?: number;
@@ -265,6 +265,15 @@ export function ForecastChart({
           name="Actual"
           stroke="var(--chart-1)"
           strokeWidth={2}
+          dot={false}
+          connectNulls={false}
+        />
+        <Line
+          dataKey="estimated"
+          name="Est. this month"
+          stroke="var(--chart-1)"
+          strokeWidth={2}
+          strokeDasharray="3 3"
           dot={false}
           connectNulls={false}
         />

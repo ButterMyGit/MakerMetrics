@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { isDemoEmail } from "@/lib/demo-account";
 import { useSalesData } from "@/hooks/use-sales-data";
 import { useProfile } from "@/hooks/use-profile";
 import { PageHeader } from "@/components/page-header";
@@ -28,11 +29,16 @@ export default function SettingsPage() {
   const router = useRouter();
   const { allRows, bounds } = useSalesData();
   const { shopName, setShopName, email } = useProfile();
+  const isDemo = isDemoEmail(email);
   const [draftName, setDraftName] = useState(shopName ?? "");
   const [saving, setSaving] = useState(false);
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
+    if (isDemo) {
+      toast.error("The demo account is read-only.");
+      return;
+    }
     setSaving(true);
     try {
       const supabase = createClient();
@@ -78,6 +84,7 @@ export default function SettingsPage() {
                 <Input
                   id="shop-name"
                   value={draftName}
+                  disabled={isDemo}
                   onChange={(e) => setDraftName(e.target.value)}
                   placeholder="My Etsy Shop"
                 />
@@ -85,7 +92,7 @@ export default function SettingsPage() {
               <Button
                 type="submit"
                 className="w-fit"
-                disabled={saving || draftName.trim() === (shopName ?? "")}
+                disabled={isDemo || saving || draftName.trim() === (shopName ?? "")}
               >
                 {saving && <Loader2 className="size-4 animate-spin" />}
                 Save
@@ -98,11 +105,13 @@ export default function SettingsPage() {
           <CardHeader>
             <CardTitle>Appearance</CardTitle>
             <CardDescription>
-              Pick the accent color used across charts and highlights.
+              {isDemo
+                ? "The demo account uses the saved demo theme."
+                : "Pick the accent color used across charts and highlights."}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <AccentPicker />
+            <AccentPicker disabled={isDemo} />
           </CardContent>
         </Card>
 
@@ -131,7 +140,7 @@ export default function SettingsPage() {
               <LogOut className="size-4" />
               Sign out
             </Button>
-            <DeleteAccountDialog />
+            <DeleteAccountDialog isDemo={isDemo} />
           </CardContent>
         </Card>
       </div>
@@ -139,13 +148,17 @@ export default function SettingsPage() {
   );
 }
 
-function DeleteAccountDialog() {
+function DeleteAccountDialog({ isDemo }: { isDemo: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [confirmText, setConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
 
   async function deleteAccount() {
+    if (isDemo) {
+      toast.error("The demo account is read-only.");
+      return;
+    }
     setDeleting(true);
     try {
       const res = await fetch("/api/account/delete", { method: "POST" });
@@ -173,7 +186,7 @@ function DeleteAccountDialog() {
         if (!o) setConfirmText("");
       }}
     >
-      <Button variant="destructive" onClick={() => setOpen(true)}>
+      <Button variant="destructive" onClick={() => setOpen(true)} disabled={isDemo}>
         <Trash2 className="size-4" />
         Delete account
       </Button>

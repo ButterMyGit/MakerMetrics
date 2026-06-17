@@ -6,21 +6,42 @@
 [![Vercel](https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://vercel.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 
-Analytics for Etsy sellers without API access. Import the CSV exports Etsy already gives you and get a fast, mobile-friendly dashboard with actionable insights, honest forecasting, and an AI analyst that answers questions about your real data.
+Analytics for Etsy sellers, without API access needed! Import the CSV exports Etsy already gives you and get a fast, mobile-friendly dashboard with insights, forecasting, and an ability to connect your own AI API key.
 
-Use MakerMetrics at [makermetrics.pro](https://makermetrics.pro).
+Try out MakerMetrics at [makermetrics.pro](https://makermetrics.pro).
 
 Built with Next.js, Supabase, and Vercel.
 
 ## Features
 
 - **Dashboard** — net revenue, orders, units, AOV, repeat-buyer rate, and Etsy fees, each compared against the previous period; monthly performance; day-of-week patterns; recent orders.
+
+<img width="1920" height="969" alt="2026-06-16_18-21-03" src="https://github.com/user-attachments/assets/bb2405b3-d539-4832-b629-74afdc71188f" />
+
 - **Orders** — full order history with instant search across buyer, item, SKU, coupon, order ID, and location, plus a detail view with line items and a fee breakdown.
+
+<img width="1920" height="969" alt="2026-06-16_19-07-51" src="https://github.com/user-attachments/assets/f63e07dd-db2f-4887-9458-73f0262cb3de" />
+
 - **Products** — every product ranked by units/revenue with a momentum label (rising / falling / new / dormant based on the last 90 days vs the prior 90), per-product monthly drilldowns, and style / product-type breakdowns.
+
+<img width="1920" height="968" alt="2026-06-16_19-09-19" src="https://github.com/user-attachments/assets/70c3012a-1d28-4998-892f-ed2e2a4793d8" />
+
 - **Customers** — repeat rate, average lifetime value, median reorder gap, new-vs-returning buyers by month, top buyers with VIP tiers, geography, coupon effectiveness, and fulfillment speed.
+
+<img width="1920" height="968" alt="2026-06-16_19-09-58" src="https://github.com/user-attachments/assets/9661f71e-8c1f-4534-8ac0-0e6bcb93b1b8" />
+
 - **Forecast** — monthly revenue and order projections using seasonal decomposition with a damped robust trend. Accuracy is measured with a walk-forward backtest and reported next to the chart (including how it compares to a naive "same month last year" guess). Per-product next-month estimates allocate the shop forecast by sales mix instead of fitting noisy per-item models.
+
+<img width="1920" height="968" alt="2026-06-16_19-12-15" src="https://github.com/user-attachments/assets/7bb94eac-2840-4de7-902f-1f52a391b4c2" />
+
 - **AI Analyst** — bring your own API key (Anthropic, OpenAI, or Google). The model answers questions by calling the same analytics functions the dashboard uses.
-- **CSV import** — drag-and-drop `EtsySoldOrderItems*.csv` and `EtsySoldOrders*.csv`. Files are parsed in the browser, merged on Order ID, deduplicated by Transaction ID, and upserted — re-importing the same file is always safe.
+
+<img width="1920" height="969" alt="2026-06-16_19-12-49" src="https://github.com/user-attachments/assets/e2f6b390-acc4-4b47-b7b6-fb905ff2a0a7" />
+
+- **CSV import** — drag-and-drop `EtsySoldOrderItems*.csv` and `EtsySoldOrders*.csv`. Files are parsed in the browser, merged on Order ID, deduplicated by Transaction ID, and upserted — re-importing the same file is always safe. Your data and account are easily deletable at any time!
+
+<img width="1920" height="967" alt="image" src="https://github.com/user-attachments/assets/80d5cf37-4cf6-49a3-b511-09e8a7bd6fc2" />
+
 
 ## If you want to self-host the project
 

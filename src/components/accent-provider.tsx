@@ -3,6 +3,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import {
   applyAccent,
+  DEFAULT_ACCENT,
   getAccent,
   getServerAccent,
   seedAccent,
@@ -30,6 +31,15 @@ export function AccentProvider({
   children: React.ReactNode;
 }) {
   const accent = useSyncExternalStore(subscribeAccent, getAccent, getServerAccent);
+
+  // Seed localStorage from the DB value the first time (no local value yet).
+  useEffect(() => {
+    if (!initialAccent) return;
+    const local = localStorage.getItem("makermetrics-accent");
+    if (!local || local === DEFAULT_ACCENT) {
+      localStorage.setItem("makermetrics-accent", initialAccent);
+    }
+  }, [initialAccent]);
 
   useEffect(() => {
     if (!userId) return;

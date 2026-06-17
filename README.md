@@ -64,6 +64,7 @@ Create `.env.local` with:
 NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
 SUPABASE_SERVICE_ROLE_KEY=optional-service-role-key-for-account-deletion
+AI_SETTINGS_ENCRYPTION_KEY=32-plus-character-secret-for-ai-key-encryption
 ```
 
 ### 3. Deploy to Vercel

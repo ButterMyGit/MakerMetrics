@@ -6,7 +6,9 @@ import {
   DEFAULT_ACCENT,
   getAccent,
   getServerAccent,
+  seedAccent,
   subscribeAccent,
+  setAccentUser,
 } from "@/lib/theme/accent-store";
 import { createClient } from "@/lib/supabase/client";
 
@@ -20,9 +22,11 @@ import { createClient } from "@/lib/supabase/client";
  * Supabase via the `setAccentPersisted` helper exported below.
  */
 export function AccentProvider({
+  userId,
   initialAccent,
   children,
 }: {
+  userId?: string;
   initialAccent?: string | null;
   children: React.ReactNode;
 }) {
@@ -36,6 +40,12 @@ export function AccentProvider({
       localStorage.setItem("makermetrics-accent", initialAccent);
     }
   }, [initialAccent]);
+
+  useEffect(() => {
+    if (!userId) return;
+    setAccentUser(userId);
+    seedAccent(initialAccent ?? getAccent());
+  }, [userId, initialAccent]);
 
   useEffect(() => {
     applyAccent(accent);

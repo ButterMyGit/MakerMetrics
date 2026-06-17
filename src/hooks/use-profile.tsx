@@ -3,6 +3,7 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 
 interface ProfileContextValue {
+  userId: string;
   shopName: string | null;
   setShopName: (name: string | null) => void;
   email: string | null;
@@ -11,10 +12,12 @@ interface ProfileContextValue {
 const ProfileContext = createContext<ProfileContextValue | null>(null);
 
 export function ProfileProvider({
+  userId,
   initialShopName,
   email,
   children,
 }: {
+  userId: string;
   initialShopName: string | null;
   email: string | null;
   children: ReactNode;
@@ -22,8 +25,8 @@ export function ProfileProvider({
   const [shopName, setShopName] = useState<string | null>(initialShopName);
 
   const value = useMemo(
-    () => ({ shopName, setShopName, email }),
-    [shopName, email]
+    () => ({ userId, shopName, setShopName, email }),
+    [userId, shopName, email]
   );
 
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>;

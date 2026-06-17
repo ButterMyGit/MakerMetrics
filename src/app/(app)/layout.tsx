@@ -29,8 +29,12 @@ export default async function AppLayout({
       : null;
 
   return (
-    <ProfileProvider initialShopName={profile?.shop_name ?? null} email={user.email ?? null}>
-    <AccentProvider initialAccent={savedAccent}>
+    <ProfileProvider
+      userId={user.id}
+      initialShopName={profile?.shop_name ?? null}
+      email={user.email ?? null}
+    >
+    <AccentProvider userId={user.id} initialAccent={savedAccent}>
       <SalesDataProvider>
         <div className="flex min-h-dvh w-full">
           <DesktopSidebar />

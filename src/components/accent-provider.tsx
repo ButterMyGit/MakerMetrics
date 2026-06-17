@@ -3,10 +3,11 @@
 import { useEffect, useSyncExternalStore } from "react";
 import {
   applyAccent,
-  DEFAULT_ACCENT,
   getAccent,
   getServerAccent,
+  seedAccent,
   subscribeAccent,
+  setAccentUser,
 } from "@/lib/theme/accent-store";
 import { createClient } from "@/lib/supabase/client";
 
@@ -20,22 +21,21 @@ import { createClient } from "@/lib/supabase/client";
  * Supabase via the `setAccentPersisted` helper exported below.
  */
 export function AccentProvider({
+  userId,
   initialAccent,
   children,
 }: {
+  userId?: string;
   initialAccent?: string | null;
   children: React.ReactNode;
 }) {
   const accent = useSyncExternalStore(subscribeAccent, getAccent, getServerAccent);
 
-  // Seed localStorage from the DB value the first time (no local value yet).
   useEffect(() => {
-    if (!initialAccent) return;
-    const local = localStorage.getItem("makermetrics-accent");
-    if (!local || local === DEFAULT_ACCENT) {
-      localStorage.setItem("makermetrics-accent", initialAccent);
-    }
-  }, [initialAccent]);
+    if (!userId) return;
+    setAccentUser(userId);
+    seedAccent(initialAccent ?? getAccent());
+  }, [userId, initialAccent]);
 
   useEffect(() => {
     applyAccent(accent);

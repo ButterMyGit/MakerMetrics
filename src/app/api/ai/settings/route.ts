@@ -4,6 +4,7 @@ import {
   isAiProvider,
   publicAiSettingsFromProfileSettings,
 } from "@/lib/ai/encrypted-settings";
+import { isDemoEmail } from "@/lib/demo-account";
 
 export async function GET() {
   const supabase = await createClient();
@@ -33,6 +34,9 @@ export async function PUT(req: Request) {
   } = await supabase.auth.getUser();
   if (!user) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+  if (isDemoEmail(user.email)) {
+    return Response.json({ error: "The demo account is read-only." }, { status: 403 });
   }
 
   const body = (await req.json()) as {
@@ -102,6 +106,9 @@ export async function DELETE() {
   } = await supabase.auth.getUser();
   if (!user) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+  if (isDemoEmail(user.email)) {
+    return Response.json({ error: "The demo account is read-only." }, { status: 403 });
   }
 
   const { data: current, error: readError } = await supabase

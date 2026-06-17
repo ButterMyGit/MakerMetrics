@@ -9,13 +9,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { BarChart3, Loader2 } from "lucide-react";
+import { BarChart3, Loader2, Sparkles } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [demoBusy, setDemoBusy] = useState(false);
 
   async function signIn(e: React.FormEvent) {
     e.preventDefault();
@@ -51,6 +52,19 @@ export default function LoginPage() {
     } else {
       toast.success("Check your email to confirm your account, then sign in.");
     }
+  }
+
+  async function signInDemo() {
+    setDemoBusy(true);
+    const res = await fetch("/api/auth/demo", { method: "POST" });
+    const body = (await res.json()) as { ok?: boolean; error?: string };
+    setDemoBusy(false);
+    if (!res.ok || !body.ok) {
+      toast.error(body.error ?? "Demo sign-in failed.");
+      return;
+    }
+    router.push("/dashboard");
+    router.refresh();
   }
 
   return (
@@ -111,6 +125,25 @@ export default function LoginPage() {
                     Sign in
                   </Button>
                 </form>
+                <div className="my-4 flex items-center gap-3">
+                  <div className="h-px flex-1 bg-border" />
+                  <span className="text-xs text-muted-foreground">or</span>
+                  <div className="h-px flex-1 bg-border" />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={signInDemo}
+                  disabled={busy || demoBusy}
+                >
+                  {demoBusy ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="size-4" />
+                  )}
+                  Check out demo account
+                </Button>
               </CardContent>
             </Card>
           </TabsContent>

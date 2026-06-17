@@ -11,7 +11,7 @@ import {
 import { setAccentPersisted } from "@/components/accent-provider";
 import { cn } from "@/lib/utils";
 
-export function AccentPicker() {
+export function AccentPicker({ disabled = false }: { disabled?: boolean }) {
   const accent = useSyncExternalStore(subscribeAccent, getAccent, getServerAccent);
   const colorInputRef = useRef<HTMLInputElement>(null);
   const isPreset = ACCENT_PRESETS.some((p) => p.value.toLowerCase() === accent.toLowerCase());
@@ -26,9 +26,11 @@ export function AccentPicker() {
             type="button"
             title={preset.name}
             aria-label={preset.name}
+            disabled={disabled}
             onClick={() => void setAccentPersisted(preset.value)}
             className={cn(
               "flex size-9 items-center justify-center rounded-full transition-transform hover:scale-110",
+              disabled && "cursor-not-allowed opacity-60 hover:scale-100",
               selected && "ring-2 ring-offset-2 ring-offset-background"
             )}
             style={{ backgroundColor: preset.value, ["--tw-ring-color" as string]: preset.value }}
@@ -43,9 +45,11 @@ export function AccentPicker() {
         type="button"
         title="Custom color"
         aria-label="Pick a custom color"
+        disabled={disabled}
         onClick={() => colorInputRef.current?.click()}
         className={cn(
           "relative flex size-9 items-center justify-center rounded-full transition-transform hover:scale-110",
+          disabled && "cursor-not-allowed opacity-60 hover:scale-100",
           !isPreset && "ring-2 ring-offset-2 ring-offset-background"
         )}
         style={{
@@ -64,6 +68,7 @@ export function AccentPicker() {
           ref={colorInputRef}
           type="color"
           value={accent}
+          disabled={disabled}
           onChange={(e) => void setAccentPersisted(e.target.value)}
           className="absolute inset-0 size-full cursor-pointer opacity-0"
           aria-hidden

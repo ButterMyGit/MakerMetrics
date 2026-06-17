@@ -3,8 +3,10 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSalesData } from "@/hooks/use-sales-data";
+import { useProfile } from "@/hooks/use-profile";
 import { buildSaleItems, parseCsvFile, type ParsedCsv } from "@/lib/etsy/parse";
 import { createClient } from "@/lib/supabase/client";
+import { isDemoEmail } from "@/lib/demo-account";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,6 +30,8 @@ const FORMAT_LABELS: Record<ParsedCsv["format"], { label: string; tone: "ok" | "
 export default function ImportPage() {
   const router = useRouter();
   const { refresh } = useSalesData();
+  const { email } = useProfile();
+  const isDemo = isDemoEmail(email);
   const [files, setFiles] = useState<ParsedCsv[]>([]);
   const [dragging, setDragging] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -55,6 +59,10 @@ export default function ImportPage() {
 
   async function runImport() {
     if (!result || result.rows.length === 0) return;
+    if (isDemo) {
+      toast.error("The demo account is read-only.");
+      return;
+    }
     setImporting(true);
     setProgress(0);
     try {
@@ -95,7 +103,11 @@ export default function ImportPage() {
     <div>
       <PageHeader
         title="Import data"
-        description="Upload the CSVs Etsy gives you — no API access needed."
+        description={
+          isDemo
+            ? "The demo account is read-only. Create your own account to import data."
+            : "Upload the CSVs Etsy gives you — no API access needed."
+        }
         showRange={false}
       />
 
@@ -113,19 +125,35 @@ export default function ImportPage() {
         <CardContent className="grid gap-4">
           <button
             type="button"
-            onClick={() => inputRef.current?.click()}
+            disabled={isDemo}
+            onClick={() => {
+              if (isDemo) {
+                toast.error("The demo account is read-only.");
+                return;
+              }
+              inputRef.current?.click();
+            }}
             onDragOver={(e) => {
               e.preventDefault();
+              if (isDemo) return;
               setDragging(true);
             }}
             onDragLeave={() => setDragging(false)}
             onDrop={(e) => {
               e.preventDefault();
               setDragging(false);
+              if (isDemo) {
+                toast.error("The demo account is read-only.");
+                return;
+              }
               void addFiles(e.dataTransfer.files);
             }}
             className={`flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-12 text-center transition-colors ${
-              dragging ? "border-primary bg-primary/5" : "border-border hover:bg-accent/40"
+              isDemo
+                ? "cursor-not-allowed border-border bg-muted/40 opacity-80"
+                : dragging
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:bg-accent/40"
             }`}
           >
             <UploadCloud className="size-8 text-muted-foreground" />
@@ -200,7 +228,7 @@ export default function ImportPage() {
                 <span className="font-semibold">{formatNumber(result.rows.length)}</span>{" "}
                 transactions.
               </p>
-              <Button onClick={runImport} disabled={importing}>
+              <Button onClick={runImport} disabled={isDemo || importing}>
                 {importing && <Loader2 className="size-4 animate-spin" />}
                 {importing ? `Importing… ${progress}%` : "Import"}
               </Button>
@@ -210,12 +238,12 @@ export default function ImportPage() {
         </CardContent>
       </Card>
 
-      <DangerZone />
+      <DangerZone isDemo={isDemo} />
     </div>
   );
 }
 
-function DangerZone() {
+function DangerZone({ isDemo }: { isDemo: boolean }) {
   const { refresh, hasData } = useSalesData();
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -223,6 +251,10 @@ function DangerZone() {
   if (!hasData) return null;
 
   async function deleteAll() {
+    if (isDemo) {
+      toast.error("The demo account is read-only.");
+      return;
+    }
     setDeleting(true);
     try {
       const supabase = createClient();
@@ -247,8 +279,9 @@ function DangerZone() {
       <CardHeader>
         <CardTitle className="text-destructive">Danger zone</CardTitle>
         <CardDescription>
-          Remove every imported transaction from your account. You can re-import your CSVs at
-          any time.
+          {isDemo
+            ? "Demo account data cannot be changed."
+            : "Remove every imported transaction from your account. You can re-import your CSVs at any time."}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -263,7 +296,7 @@ function DangerZone() {
             </Button>
           </div>
         ) : (
-          <Button variant="outline" onClick={() => setConfirming(true)}>
+          <Button variant="outline" onClick={() => setConfirming(true)} disabled={isDemo}>
             <Trash2 className="size-4" />
             Delete all data
           </Button>

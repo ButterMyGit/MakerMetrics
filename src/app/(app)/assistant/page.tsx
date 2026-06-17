@@ -21,6 +21,7 @@ import {
   type AiSettings,
   type AiSettingsInput,
 } from "@/lib/ai/settings-store";
+import { isDemoEmail } from "@/lib/demo-account";
 import { useProfile } from "@/hooks/use-profile";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -220,7 +221,8 @@ function MarkdownMessage({ text }: { text: string }) {
 }
 
 export default function AssistantPage() {
-  const { userId } = useProfile();
+  const { userId, email } = useProfile();
+  const isDemo = isDemoEmail(email);
   const settings = useSyncExternalStore(
     subscribeAiSettings,
     getAiSettings,
@@ -536,6 +538,7 @@ export default function AssistantPage() {
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
         settings={settings}
+        isDemo={isDemo}
         onSave={async (s) => {
           try {
             await saveAiSettings(s);
@@ -554,11 +557,13 @@ function SettingsDialog({
   open,
   onOpenChange,
   settings,
+  isDemo,
   onSave,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   settings: AiSettings | null;
+  isDemo: boolean;
   onSave: (s: AiSettingsInput) => Promise<void>;
 }) {
   // The parent remounts this dialog (via key) whenever it opens, so state
@@ -580,8 +585,9 @@ function SettingsDialog({
         <DialogHeader>
           <DialogTitle>AI provider</DialogTitle>
           <DialogDescription>
-            Your API key is encrypted before it is saved to your account. Enter a new key
-            here whenever you want to replace the saved key.
+            {isDemo
+              ? "The demo account is read-only. Create your own account to save an AI provider key."
+              : "Your API key is encrypted before it is saved to your account. Enter a new key here whenever you want to replace the saved key."}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
@@ -636,7 +642,7 @@ function SettingsDialog({
           {settings?.hasApiKey && (
             <Button
               variant="outline"
-              disabled={saving || deleting}
+              disabled={isDemo || saving || deleting}
               onClick={async () => {
                 setDeleting(true);
                 try {
@@ -655,7 +661,7 @@ function SettingsDialog({
             </Button>
           )}
           <Button
-            disabled={saving || deleting}
+            disabled={isDemo || saving || deleting}
             onClick={async () => {
               if (!apiKey.trim()) {
                 toast.error("Enter an API key.");

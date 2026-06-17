@@ -10,6 +10,7 @@ import {
   setAccentUser,
 } from "@/lib/theme/accent-store";
 import { createClient } from "@/lib/supabase/client";
+import { isDemoEmail } from "@/lib/demo-account";
 
 /**
  * Keeps the document accent CSS variables in sync with the stored color.
@@ -54,6 +55,7 @@ export async function setAccentPersisted(hex: string): Promise<void> {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) return;
+    if (isDemoEmail(user.email)) return;
     // Use a raw RPC approach to merge into the JSONB without overwriting
     // other keys in settings.
     await supabase.rpc("set_profile_setting", { key: "accent", value: hex });

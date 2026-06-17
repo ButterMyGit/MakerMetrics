@@ -1,5 +1,6 @@
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { isDemoEmail } from "@/lib/demo-account";
 
 export const maxDuration = 30;
 
@@ -19,6 +20,10 @@ export async function POST() {
 
   if (!user) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  if (isDemoEmail(user.email)) {
+    return Response.json({ error: "The demo account is read-only." }, { status: 403 });
   }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;

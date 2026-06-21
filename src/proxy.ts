@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 // API routes return their own 401s instead of redirecting to the login page.
-const PUBLIC_PATHS = ["/login", "/auth", "/api"];
+const PUBLIC_PATHS = ["/login", "/terms", "/auth", "/api"];
 
 export default async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });

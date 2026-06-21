@@ -1,15 +1,23 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { BarChart3, Loader2, Sparkles } from "lucide-react";
+import { BarChart3, Info, Loader2, Sparkles } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,6 +25,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [demoBusy, setDemoBusy] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
 
   async function signIn(e: React.FormEvent) {
     e.preventDefault();
@@ -68,7 +77,14 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-dvh items-center justify-center p-4">
+    <main className="relative flex min-h-dvh items-center justify-center p-4 pb-20">
+      <div className="absolute right-4 top-4">
+        <Button variant="outline" size="sm" onClick={() => setAboutOpen(true)}>
+          <Info className="size-4" />
+          What is this project?
+        </Button>
+      </div>
+
       <div className="w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center gap-2 text-center">
           <div className="flex size-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
@@ -191,6 +207,51 @@ export default function LoginPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <footer className="absolute inset-x-4 bottom-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+        <a
+          href="https://github.com/ButterMyGit/MakerMetrics/blob/main/LICENSE"
+          target="_blank"
+          rel="noreferrer"
+          className="underline-offset-4 hover:text-foreground hover:underline"
+        >
+          MIT License
+        </a>
+        <Link href="/terms" className="underline-offset-4 hover:text-foreground hover:underline">
+          Terms of Service
+        </Link>
+        <span>
+          Made by{" "}
+          <a
+            href="https://github.com/ButterMyGit"
+            target="_blank"
+            rel="noreferrer"
+            className="underline-offset-4 hover:text-foreground hover:underline"
+          >
+            ButterMyGit on GitHub
+          </a>
+        </span>
+      </footer>
+
+      <Dialog open={aboutOpen} onOpenChange={setAboutOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>What is MakerMetrics?</DialogTitle>
+            <DialogDescription className="space-y-3 text-foreground">
+              <span className="block">
+                MakerMetrics is an analytics dashboard for Etsy sellers. You do not need
+                Etsy&apos;s official API; all you need is to import the CSV exports Etsy already
+                gives you.
+              </span>
+              <span className="block">
+                It turns those exports into what Etsy fails to give its sellers: a useful,
+                mobile-friendly dashboard with insights, forecasting, and the option to
+                connect your own AI API key.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

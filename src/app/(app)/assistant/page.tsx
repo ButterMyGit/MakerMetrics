@@ -38,6 +38,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -220,6 +221,65 @@ function MarkdownMessage({ text }: { text: string }) {
   return <div className="grid gap-2 text-sm text-foreground">{blocks}</div>;
 }
 
+function ChatHistoryPanel({
+  threads,
+  activeThreadId,
+  onNew,
+  onOpen,
+  onDelete,
+}: {
+  threads: ChatThread[];
+  activeThreadId: string;
+  onNew: () => void;
+  onOpen: (thread: ChatThread) => void;
+  onDelete: (threadId: string) => void;
+}) {
+  return (
+    <>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="text-sm font-medium">Chat history</h2>
+        <Button variant="outline" size="sm" onClick={onNew}>
+          <MessageSquarePlus className="size-4" />
+          New
+        </Button>
+      </div>
+      <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+        {threads.length === 0 ? (
+          <p className="px-2 py-6 text-sm text-muted-foreground">No saved chats yet.</p>
+        ) : (
+          threads.map((thread) => (
+            <div
+              key={thread.id}
+              className={cn(
+                "group flex items-center gap-1 rounded-md",
+                thread.id === activeThreadId && "bg-accent"
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => onOpen(thread)}
+                className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent"
+              >
+                <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
+                <span className="truncate">{thread.title}</span>
+              </button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-8 opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
+                onClick={() => onDelete(thread.id)}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
+          ))
+        )}
+      </div>
+    </>
+  );
+}
+
 export default function AssistantPage() {
   const { userId, email } = useProfile();
   const isDemo = isDemoEmail(email);
@@ -231,6 +291,7 @@ export default function AssistantPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [input, setInput] = useState("");
   const [historyOpen, setHistoryOpen] = useState(true);
+  const [historySheetOpen, setHistorySheetOpen] = useState(false);
   const [threads, setThreads] = useState<ChatThread[]>(() => readChatHistory(userId));
   const [activeThreadId, setActiveThreadId] = useState(() => createThreadId());
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -306,6 +367,7 @@ export default function AssistantPage() {
     setActiveThreadId(createThreadId());
     setMessages([]);
     setInput("");
+    setHistorySheetOpen(false);
   }
 
   function openThread(thread: ChatThread) {
@@ -313,6 +375,7 @@ export default function AssistantPage() {
     setActiveThreadId(thread.id);
     setMessages(thread.messages);
     setInput("");
+    setHistorySheetOpen(false);
   }
 
   function deleteThread(threadId: string) {
@@ -325,18 +388,23 @@ export default function AssistantPage() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-9.5rem)] flex-col lg:h-[calc(100dvh-6rem)]">
+    <div className="relative left-1/2 flex h-[calc(100dvh-9.5rem)] w-[calc(100vw-2rem)] -translate-x-1/2 flex-col sm:w-[calc(100vw-3rem)] lg:h-[calc(100dvh-6rem)] lg:w-[calc(100vw-19rem)] 2xl:max-w-[1600px]">
       <PageHeader
         title="AI Analyst"
-        description="Ask anything about your shop — it queries your real data."
+        description="Ask anything about your shop"
         showRange={false}
         actions={
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
-              className="hidden lg:inline-flex"
-              onClick={() => setHistoryOpen((v) => !v)}
+              onClick={() => {
+                if (window.matchMedia("(min-width: 1024px)").matches) {
+                  setHistoryOpen((v) => !v);
+                } else {
+                  setHistorySheetOpen(true);
+                }
+              }}
             >
               {historyOpen ? (
                 <PanelRightClose className="size-4" />
@@ -357,7 +425,7 @@ export default function AssistantPage() {
         }
       />
 
-      <div className="flex min-h-0 flex-1 gap-4">
+      <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 gap-5">
         <div className="flex min-w-0 flex-1 flex-col">
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto pb-4">
             {messages.length === 0 ? (
@@ -399,7 +467,7 @@ export default function AssistantPage() {
                 )}
               </div>
             ) : (
-              <div className="mx-auto grid max-w-3xl gap-4">
+              <div className="mx-auto grid w-full max-w-4xl gap-4">
                 {messages.map((message) => (
                   <div
                     key={message.id}
@@ -488,50 +556,34 @@ export default function AssistantPage() {
         </div>
 
         {historyOpen && (
-          <aside className="hidden w-72 shrink-0 border-l pl-4 lg:flex lg:flex-col">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-medium">Chat history</h2>
-              <Button variant="outline" size="sm" onClick={startNewChat}>
-                <MessageSquarePlus className="size-4" />
-                New
-              </Button>
-            </div>
-            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
-              {threads.length === 0 ? (
-                <p className="px-2 py-6 text-sm text-muted-foreground">No saved chats yet.</p>
-              ) : (
-                threads.map((thread) => (
-                  <div
-                    key={thread.id}
-                    className={cn(
-                      "group flex items-center gap-1 rounded-md",
-                      thread.id === activeThreadId && "bg-accent"
-                    )}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => openThread(thread)}
-                      className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent"
-                    >
-                      <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
-                      <span className="truncate">{thread.title}</span>
-                    </button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 opacity-0 group-hover:opacity-100"
-                      onClick={() => deleteThread(thread.id)}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </div>
-                ))
-              )}
-            </div>
+          <aside className="hidden w-80 shrink-0 border-l pl-5 lg:flex lg:flex-col xl:w-88">
+            <ChatHistoryPanel
+              threads={threads}
+              activeThreadId={activeThreadId}
+              onNew={startNewChat}
+              onOpen={openThread}
+              onDelete={deleteThread}
+            />
           </aside>
         )}
       </div>
+
+      <Sheet open={historySheetOpen} onOpenChange={setHistorySheetOpen}>
+        <SheetContent side="right" className="w-[min(28rem,90vw)]">
+          <SheetHeader>
+            <SheetTitle>Chat history</SheetTitle>
+          </SheetHeader>
+          <div className="min-h-0 flex-1 px-4 pb-4">
+            <ChatHistoryPanel
+              threads={threads}
+              activeThreadId={activeThreadId}
+              onNew={startNewChat}
+              onOpen={openThread}
+              onDelete={deleteThread}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <SettingsDialog
         key={settingsOpen ? "open" : "closed"}

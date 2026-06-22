@@ -21,6 +21,10 @@ export const metadata: Metadata = {
   },
   description:
     "Analytics for Etsy sellers. Import your Etsy CSV exports and get actionable insights, forecasts, and an AI analyst.",
+  icons: {
+    icon: "/makermetrics-logo.png",
+    apple: "/makermetrics-logo.png",
+  },
 };
 
 export const viewport: Viewport = {

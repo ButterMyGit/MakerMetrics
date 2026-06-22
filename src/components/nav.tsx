@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  BarChart3,
   LayoutDashboard,
   Package,
   Receipt,
@@ -48,10 +48,17 @@ export function DesktopSidebar() {
   const { shopName } = useProfile();
 
   return (
-    <aside className="hidden lg:flex w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
+    <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground lg:flex">
       <div className="flex items-center gap-2.5 px-5 py-5">
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-          <BarChart3 className="size-4" />
+        <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-background ring-1 ring-border">
+          <Image
+            src="/makermetrics-logo.png"
+            alt="MakerMetrics"
+            width={32}
+            height={32}
+            className="size-full object-cover"
+            priority
+          />
         </div>
         <div className="flex min-w-0 flex-col">
           <span className="truncate text-base font-semibold tracking-tight">
@@ -62,7 +69,7 @@ export function DesktopSidebar() {
           )}
         </div>
       </div>
-      <nav className="flex flex-1 flex-col gap-1 px-3">
+      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3">
         {NAV_ITEMS.map((item) => {
           const active = pathname.startsWith(item.href);
           return (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -17,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { BarChart3, Info, Loader2, Sparkles } from "lucide-react";
+import { Info, Loader2, Sparkles } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -87,8 +88,15 @@ export default function LoginPage() {
 
       <div className="w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center gap-2 text-center">
-          <div className="flex size-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <BarChart3 className="size-6" />
+          <div className="flex size-12 items-center justify-center overflow-hidden rounded-xl bg-background ring-1 ring-border">
+            <Image
+              src="/makermetrics-logo.png"
+              alt="MakerMetrics"
+              width={48}
+              height={48}
+              className="size-full object-cover"
+              priority
+            />
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">MakerMetrics</h1>
           <p className="text-sm text-muted-foreground">

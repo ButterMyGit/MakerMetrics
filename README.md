@@ -6,7 +6,7 @@
 [![Vercel](https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://vercel.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 
-Analytics for Etsy sellers, without API access needed! Import the CSV exports Etsy already gives you and get a fast, mobile-friendly dashboard with insights, forecasting, and an ability to connect your own AI API key.
+See what your Etsy shop earns after fees and what needs your attention. Import the CSV exports Etsy already gives you; no API access needed.
 
 Try out MakerMetrics at [makermetrics.pro](https://makermetrics.pro).
 
@@ -14,34 +14,14 @@ Built with Next.js, Supabase, and Vercel.
 
 ## Features
 
-- **Dashboard** — net revenue, orders, units, AOV, repeat-buyer rate, and Etsy fees, each compared against the previous period; monthly performance; day-of-week patterns; recent orders.
-
-<img width="1920" height="969" alt="2026-06-16_18-21-03" src="https://github.com/user-attachments/assets/bb2405b3-d539-4832-b629-74afdc71188f" />
-
-- **Orders** — full order history with instant search across buyer, item, SKU, coupon, order ID, and location, plus a detail view with line items and a fee breakdown.
-
-<img width="1920" height="969" alt="2026-06-16_19-07-51" src="https://github.com/user-attachments/assets/f63e07dd-db2f-4887-9458-73f0262cb3de" />
-
-- **Products** — every product ranked by units/revenue with a momentum label (rising / falling / new / dormant based on the last 90 days vs the prior 90), per-product monthly drilldowns, and style / product-type breakdowns.
-
-<img width="1920" height="968" alt="2026-06-16_19-09-19" src="https://github.com/user-attachments/assets/70c3012a-1d28-4998-892f-ed2e2a4793d8" />
-
-- **Customers** — repeat rate, average lifetime value, median reorder gap, new-vs-returning buyers by month, top buyers with VIP tiers, geography, coupon effectiveness, and fulfillment speed.
-
-<img width="1920" height="968" alt="2026-06-16_19-09-58" src="https://github.com/user-attachments/assets/9661f71e-8c1f-4534-8ac0-0e6bcb93b1b8" />
-
-- **Forecast** — monthly revenue and order projections using seasonal decomposition with a damped robust trend. Accuracy is measured with a walk-forward backtest and reported next to the chart (including how it compares to a naive "same month last year" guess). Per-product next-month estimates allocate the shop forecast by sales mix instead of fitting noisy per-item models.
-
-<img width="1920" height="968" alt="2026-06-16_19-12-15" src="https://github.com/user-attachments/assets/7bb94eac-2840-4de7-902f-1f52a391b4c2" />
-
-- **AI Analyst** — bring your own API key (Anthropic, OpenAI, or Google). The model answers questions by calling the same analytics functions the dashboard uses.
-
-<img width="1920" height="969" alt="2026-06-16_19-12-49" src="https://github.com/user-attachments/assets/e2f6b390-acc4-4b47-b7b6-fb905ff2a0a7" />
-
-- **CSV import** — drag-and-drop `EtsySoldOrderItems*.csv` and `EtsySoldOrders*.csv`. Files are parsed in the browser, merged on Order ID, deduplicated by Transaction ID, and upserted — re-importing the same file is always safe. Your data and account are easily deletable at any time!
-
-<img width="1920" height="967" alt="image" src="https://github.com/user-attachments/assets/80d5cf37-4cf6-49a3-b511-09e8a7bd6fc2" />
-
+- **Dashboard**: revenue, net after Etsy fees, orders, average order value and repeat buyers for the selected period, each compared with the period before it. Defaults to the last 30 days. A "Needs attention" list calls out real changes (a product slowing down, revenue pacing behind, repeat buyers due to reorder, late shipping) and only when there are enough orders behind them. The month in progress is drawn as partial, with where it is expected to finish.
+- **Orders**: a sortable, filterable table with CSV export. Each order opens beside the list as a top-to-bottom breakdown: item subtotal, discount, shipping, tax collected by Etsy, processing fee, estimated Etsy fees, net. Tabs for **Fulfillment** (shipping speed and on-time rate against your processing time) and **Coupons** (every code, what it cost, and how busy the shop was while it ran).
+- **Products**: one row per Etsy listing with a six-month sparkline, item sales, and the raw 90-day change (for example 7 → 1). Rising/falling labels appear only above a minimum volume. Click a product for its variants, buyers and monthly history.
+- **Customers**: repeat buyers, revenue per buyer, typical time to reorder, new vs returning by month, top buyers with their full order history, and where orders ship.
+- **Outlook**: a forecast for the month in progress and the next three. Several simple models are back-tested on your own history and the most accurate one is used; if "same as last month" wins, that is what you get. Seasonal patterns are only used with two full years of data. Revenue is derived from forecast orders, ranges come from how wrong the back-test was, and the measured accuracy is shown above the chart.
+- **AI Analyst**: bring your own API key (Anthropic, OpenAI or Google). The model list is loaded from the provider with your key, and the analyst answers by calling the same calculations as the pages. Buyer names are replaced with labels such as "Buyer 12" unless you choose to share them.
+- **CSV import**: drop `EtsySoldOrderItems*.csv`, `EtsySoldOrders*.csv` and optionally `EtsyDirectCheckoutPayments*.csv`. Files are parsed in the browser, merged on Order ID and matched by Transaction ID, so re-importing is always safe.
+- **Everywhere**: date range presets and custom ranges (kept in the URL), an "i" on each metric explaining its formula, privacy mode for screenshots, and search with Ctrl/Cmd+K.
 
 ## If you want to self-host the project
 
@@ -111,9 +91,12 @@ Then drag the files onto the **Import** page. Orders and payments files only add
 
 ## Notes on the data
 
-- Etsy CSVs have no street-level analytics value, so MakerMetrics deliberately does **not** store street addresses — only city/state/zip/country.
-- "Net revenue" = Etsy's order net (after transaction + processing fees, before shipping label costs).
-- Item names in the form `Product Name | Product Type` are split automatically; `Style:` variations are parsed into a Style field.
+- MakerMetrics deliberately does **not** store street addresses, only city/state/zip/country.
+- **Revenue** = item prices − your discounts + shipping you charged. Sales tax that Etsy collects and remits is excluded.
+- **Net after Etsy fees** = revenue − payment processing fees (actual, from the Sold Orders export) − refunds − an estimated 6.5% transaction fee − an estimated $0.20 listing fee per unit. Etsy Ads, Offsite Ads fees, shipping labels and your own costs are not in the order exports and are not included.
+- Products are identified by Etsy listing ID, so a retitled listing stays one product. The display name is the listing title up to the first `|`.
+- Variations are read as name/value pairs (`Size: 8x10, Color: Black`), whatever the option is called.
+- Traffic data (visits, views, favorites, search terms, conversion) is not available outside Etsy's own Shop Stats and is not part of MakerMetrics.
 
 ## Tech stack
 
@@ -121,7 +104,7 @@ Then drag the files onto the **Import** page. Orders and payments files only add
 |---|---|
 | Framework | Next.js (App Router, TypeScript) |
 | Database + auth | Supabase |
-| UI | Tailwind CSS + shadcn/ui, Recharts |
+| UI | Tailwind CSS + shadcn/ui, Recharts (loaded on demand) |
 | AI | Vercel AI SDK with BYOK providers (Anthropic / OpenAI / Google) |
 | CSV parsing | PapaParse (client-side) |
 

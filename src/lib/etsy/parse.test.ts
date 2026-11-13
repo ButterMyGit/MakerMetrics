@@ -41,10 +41,28 @@ describe("derivations", () => {
     });
   });
 
-  it("strips style prefixes from variations", () => {
+  it("reduces variations to their chosen values, whatever the option is called", () => {
     expect(deriveStyle("Style: Matte")).toBe("Matte");
     expect(deriveStyle("Custom Property: Glossy")).toBe("Glossy");
+    expect(deriveStyle("Size: 8x10, Color: Black")).toBe("8x10 / Black");
     expect(deriveStyle(null)).toBeNull();
+  });
+});
+
+describe("coupons at import", () => {
+  it("stores a repeated code once", () => {
+    const { rows } = buildSaleItems([
+      {
+        fileName: "EtsySoldOrderItems2026.csv",
+        format: "items",
+        rows: [
+          { "Transaction ID": "1", "Order ID": "9", "Item Name": "A", "Coupon Code": "OCT20OFF;OCT20OFF" },
+          { "Transaction ID": "2", "Order ID": "9", "Item Name": "B", "Coupon Code": "oct20off; SHIPFREE" },
+          { "Transaction ID": "3", "Order ID": "10", "Item Name": "C", "Coupon Code": "" },
+        ],
+      },
+    ]);
+    expect(rows.map((r) => r.coupon_code)).toEqual(["OCT20OFF", "OCT20OFF;SHIPFREE", null]);
   });
 });
 

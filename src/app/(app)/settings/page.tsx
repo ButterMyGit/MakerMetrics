@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { isDemoEmail } from "@/lib/demo-account";
 import { clearSalesCache } from "@/lib/data/sales-cache";
 import { useSalesData } from "@/hooks/use-sales-data";
 import { useProfile } from "@/hooks/use-profile";
@@ -23,14 +22,18 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { formatNumber } from "@/lib/format";
-import { Loader2, LogOut, Trash2, TriangleAlert } from "lucide-react";
+import { formatDate, formatNumber } from "@/lib/format";
+import { AiSettingsCard } from "@/components/ai-settings-card";
+import { usePrivacy } from "@/hooks/use-privacy";
+import { Switch } from "@/components/ui/switch";
+import { Loader2, LogOut, Trash2, TriangleAlert, Upload } from "lucide-react";
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { allRows, bounds } = useSalesData();
-  const { shopName, setShopName, email } = useProfile();
-  const isDemo = isDemoEmail(email);
+  const { allOrders, lineItems, bounds, through } = useSalesData();
+  const { shopName, setShopName, email, isDemo } = useProfile();
+  const privacy = usePrivacy();
+  const units = allOrders.reduce((s, o) => s + o.units, 0);
   const [draftName, setDraftName] = useState(shopName ?? "");
   const [saving, setSaving] = useState(false);
 
@@ -121,14 +124,38 @@ export default function SettingsPage() {
           <CardHeader>
             <CardTitle>Data</CardTitle>
             <CardDescription>
-              {formatNumber(allRows.length)} transactions imported
-              {bounds ? ` (${bounds.min} → ${bounds.max})` : ""}.
+              {allOrders.length === 0
+                ? "Nothing imported yet."
+                : `${formatNumber(allOrders.length)} orders containing ${formatNumber(lineItems)} line items and ${formatNumber(units)} units${
+                    bounds ? `, from ${formatDate(bounds.min)} to ${formatDate(through ?? bounds.max)}` : ""
+                  }. An order can hold several line items (different products), and a line item can be more than one unit.`}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <Button variant="outline" asChild>
-              <Link href="/import">Manage data</Link>
+              <Link href="/import">
+                <Upload className="size-4" />
+                Import or manage data
+              </Link>
             </Button>
+          </CardContent>
+        </Card>
+
+        <AiSettingsCard />
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Privacy mode</CardTitle>
+            <CardDescription>
+              Shows buyers as initials and locations as a state or country, and shortens order
+              numbers. Use it for screenshots or when sharing your screen.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-3">
+              <Switch id="privacy-mode" checked={privacy.enabled} onCheckedChange={privacy.toggle} />
+              <Label htmlFor="privacy-mode">{privacy.enabled ? "On" : "Off"}</Label>
+            </div>
           </CardContent>
         </Card>
 

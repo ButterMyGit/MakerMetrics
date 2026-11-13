@@ -8,35 +8,51 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { dbRowToSaleRow, type SaleItemDbRow, type SaleRow } from "@/lib/types";
-import { dateBounds, filterByDateRange } from "@/lib/analytics/core";
+import { buildOrders, dataThrough, dateBounds, filterOrders, type Order } from "@/lib/analytics/core";
 import { readSalesCache, writeSalesCache } from "@/lib/data/sales-cache";
+import { minIso, todayIso } from "@/lib/dates";
+import { setCurrency } from "@/lib/format";
+import {
+  getRangeChoice,
+  getServerRangeChoice,
+  rangeLabel,
+  resolveRange,
+  setRangeChoice,
+  subscribeRange,
+  type RangeChoice,
+} from "@/lib/range-store";
 import { useProfile } from "@/hooks/use-profile";
 
-export type RangePreset = "all" | "30d" | "90d" | "12m" | "ytd" | "lastyear";
-
-export interface DateRange {
-  preset: RangePreset;
+export interface ActiveRange extends RangeChoice {
+  /** resolved, inclusive dates; null on both for "all time" */
   start: string | null;
   end: string | null;
+  label: string;
 }
 
 interface SalesDataContextValue {
-  /** all rows, unfiltered, sorted by saleDate ascending */
-  allRows: SaleRow[];
-  /** rows within the active date range */
-  rows: SaleRow[];
+  /** every order, oldest first */
+  allOrders: Order[];
+  /** orders within the active date range */
+  orders: Order[];
+  /** number of imported line items */
+  lineItems: number;
   /** true only until the first rows (cached or fetched) are available */
   loading: boolean;
   /** true while the server copy is being checked or re-downloaded */
   syncing: boolean;
   error: string | null;
-  range: DateRange;
-  setPreset: (preset: RangePreset) => void;
+  range: ActiveRange;
+  setRange: (choice: RangeChoice) => void;
   bounds: { min: string; max: string } | null;
+  /** last date the data covers (latest sale or shipment), never later than today */
+  through: string | null;
+  today: string;
   refresh: () => Promise<void>;
   hasData: boolean;
 }
@@ -45,7 +61,7 @@ const SalesDataContext = createContext<SalesDataContextValue | null>(null);
 
 const PAGE_SIZE = 1000;
 /** Bump when the cached row shape changes so old device caches are ignored. */
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 
 /**
  * A cheap fingerprint of the account's rows: how many there are and when one
@@ -94,27 +110,6 @@ async function fetchAllRows(count: number): Promise<SaleRow[]> {
   return rows.map(dbRowToSaleRow);
 }
 
-function presetToRange(preset: RangePreset): DateRange {
-  const today = new Date();
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  switch (preset) {
-    case "30d":
-      return { preset, start: iso(new Date(today.getTime() - 30 * 86400000)), end: null };
-    case "90d":
-      return { preset, start: iso(new Date(today.getTime() - 90 * 86400000)), end: null };
-    case "12m":
-      return { preset, start: iso(new Date(today.getTime() - 365 * 86400000)), end: null };
-    case "ytd":
-      return { preset, start: `${today.getFullYear()}-01-01`, end: null };
-    case "lastyear": {
-      const y = today.getFullYear() - 1;
-      return { preset, start: `${y}-01-01`, end: `${y}-12-31` };
-    }
-    default:
-      return { preset: "all", start: null, end: null };
-  }
-}
-
 interface LoadUpdate {
   rows?: SaleRow[];
   error?: string;
@@ -154,7 +149,8 @@ export function SalesDataProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [range, setRange] = useState<DateRange>({ preset: "all", start: null, end: null });
+  const choice = useSyncExternalStore(subscribeRange, getRangeChoice, getServerRangeChoice);
+  const [today] = useState(() => todayIso());
   const generation = useRef(0);
 
   const applyUpdate = useCallback((update: LoadUpdate) => {
@@ -189,31 +185,47 @@ export function SalesDataProvider({ children }: { children: ReactNode }) {
     });
   }, [userId, applyUpdate]);
 
-  const setPreset = useCallback((preset: RangePreset) => {
-    setRange(presetToRange(preset));
-  }, []);
+  const allOrders = useMemo(() => {
+    // The shop's currency is whatever most rows are in.
+    const counts = new Map<string, number>();
+    for (const r of allRows) if (r.currency) counts.set(r.currency, (counts.get(r.currency) ?? 0) + 1);
+    setCurrency([...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]);
+    return buildOrders(allRows);
+  }, [allRows]);
 
-  const bounds = useMemo(() => dateBounds(allRows), [allRows]);
+  const bounds = useMemo(() => dateBounds(allOrders), [allOrders]);
+  const through = useMemo(() => {
+    const latest = dataThrough(allOrders);
+    return latest ? minIso(latest, today) : null;
+  }, [allOrders, today]);
 
-  const rows = useMemo(
-    () => filterByDateRange(allRows, range.start, range.end),
-    [allRows, range.start, range.end]
+  const range = useMemo<ActiveRange>(
+    () => ({ ...choice, ...resolveRange(choice, through ?? today), label: rangeLabel(choice) }),
+    [choice, through, today]
+  );
+
+  const orders = useMemo(
+    () => filterOrders(allOrders, range.start, range.end),
+    [allOrders, range.start, range.end]
   );
 
   const value = useMemo(
     () => ({
-      allRows,
-      rows,
+      allOrders,
+      orders,
+      lineItems: allRows.length,
       loading,
       syncing,
       error,
       range,
-      setPreset,
+      setRange: setRangeChoice,
       bounds,
+      through,
+      today,
       refresh,
       hasData: allRows.length > 0,
     }),
-    [allRows, rows, loading, syncing, error, range, setPreset, bounds, refresh]
+    [allOrders, orders, allRows.length, loading, syncing, error, range, bounds, through, today, refresh]
   );
 
   return <SalesDataContext.Provider value={value}>{children}</SalesDataContext.Provider>;

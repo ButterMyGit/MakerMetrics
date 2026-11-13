@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import {
+  decryptAiSettings,
   encryptAiSettings,
   isAiProvider,
   publicAiSettingsFromProfileSettings,
@@ -44,14 +45,8 @@ export async function PUT(req: Request) {
     model?: unknown;
     apiKey?: unknown;
   };
-  if (
-    !isAiProvider(body.provider) ||
-    typeof body.model !== "string" ||
-    !body.model.trim() ||
-    typeof body.apiKey !== "string" ||
-    !body.apiKey.trim()
-  ) {
-    return Response.json({ error: "Provider, model, and API key are required." }, { status: 400 });
+  if (!isAiProvider(body.provider) || typeof body.model !== "string" || !body.model.trim()) {
+    return Response.json({ error: "Choose a provider and a model." }, { status: 400 });
   }
 
   const { data: current, error: readError } = await supabase
@@ -63,12 +58,27 @@ export async function PUT(req: Request) {
     return Response.json({ error: readError.message }, { status: 500 });
   }
 
+  // The key may be omitted to change only the model, as long as a key for
+  // the same provider is already saved.
+  let apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+  if (!apiKey) {
+    try {
+      const saved = decryptAiSettings(current?.settings);
+      if (saved && saved.provider === body.provider) apiKey = saved.apiKey;
+    } catch {
+      // Unreadable saved key: require a new one below.
+    }
+  }
+  if (!apiKey) {
+    return Response.json({ error: "Enter an API key for this provider." }, { status: 400 });
+  }
+
   let encrypted;
   try {
     encrypted = encryptAiSettings({
       provider: body.provider,
       model: body.model.trim(),
-      apiKey: body.apiKey.trim(),
+      apiKey,
     });
   } catch (error) {
     return Response.json(

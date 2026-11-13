@@ -14,7 +14,8 @@ export interface AiSettings {
 
 export interface AiSettingsInput {
   provider: AiSettings["provider"];
-  apiKey: string;
+  /** omit to keep the saved key and change only the model */
+  apiKey?: string;
   model: string;
 }
 

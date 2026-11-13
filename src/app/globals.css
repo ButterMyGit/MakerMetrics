@@ -128,3 +128,11 @@
     @apply font-sans;
   }
 }
+/* The page scrolls without a visible scrollbar, so content never shifts when
+   a menu or dialog locks scrolling. */
+html {
+  scrollbar-width: none;
+}
+html::-webkit-scrollbar {
+  display: none;
+}

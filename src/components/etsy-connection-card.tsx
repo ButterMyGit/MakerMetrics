@@ -120,7 +120,9 @@ export function EtsyConnectionCard() {
   return (
     <Card id="etsy">
       <CardHeader>
-        <CardTitle>Etsy connection</CardTitle>
+        <CardTitle>
+          Etsy connection <span className="text-sm font-normal text-muted-foreground">(Coming Soon!)</span>
+        </CardTitle>
         <CardDescription>
           Optional. Pull orders, fees and listings straight from Etsy instead of uploading CSVs.
           It uses an API key from your own Etsy developer account and can only read your shop;

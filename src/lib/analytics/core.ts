@@ -877,10 +877,10 @@ export function geoBreakdown(orders: Order[], by: "state" | "country"): GeoStat[
 // ---------------------------------------------------------------------------
 
 /**
- * VIP: 3+ orders. Returning: 2 orders. New: one order, placed in the last
- * 30 days. One-time: one order, longer ago.
+ * Returning: two or more orders. New: one order, placed in the last 30 days.
+ * One-time: one order, longer ago.
  */
-export type BuyerTier = "VIP" | "Returning" | "New" | "One-time";
+export type BuyerTier = "Returning" | "New" | "One-time";
 
 export const NEW_BUYER_DAYS = 30;
 
@@ -951,8 +951,7 @@ export function buyerStats(orders: Order[], asOf?: string | null, history?: Orde
       b.firstOrder = full.firstOrder;
       continue;
     }
-    if (b.orders >= 3) b.tier = "VIP";
-    else if (b.orders === 2) b.tier = "Returning";
+    if (b.orders >= 2) b.tier = "Returning";
     else if (today && b.firstOrder && daysBetween(b.firstOrder, today) <= NEW_BUYER_DAYS)
       b.tier = "New";
     else b.tier = "One-time";

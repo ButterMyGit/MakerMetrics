@@ -296,7 +296,7 @@ describe("buyers", () => {
   it("labels single-order buyers as New only when the order is recent", () => {
     const tiers = Object.fromEntries(buyerStats(orders, "2025-03-31").map((b) => [b.key, b.tier]));
     expect(tiers).toEqual({
-      "id:vip": "VIP",
+      "id:vip": "Returning",
       "id:twice": "Returning",
       "id:old": "One-time",
       "id:fresh": "New",

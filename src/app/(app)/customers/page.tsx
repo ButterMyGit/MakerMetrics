@@ -1,22 +1,28 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
+import { Download } from "lucide-react";
 import { useSalesData } from "@/hooks/use-sales-data";
+import { usePrivacy } from "@/hooks/use-privacy";
+import { initialParam } from "@/hooks/use-media-query";
 import {
   buyerStats,
   computeKpis,
-  couponAnalysis,
   customerKpis,
-  fulfillmentStats,
   geoBreakdown,
+  type BuyerStat,
+  type BuyerTier,
 } from "@/lib/analytics/core";
-import { PageHeader } from "@/components/page-header";
+import { EmptyRange, PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { EmptyState, LoadingState } from "@/components/empty-state";
-import { BarList, SimpleBarChart, StackedMonthlyChart } from "@/components/charts";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { BarList, StackedMonthlyChart } from "@/components/charts";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Table,
   TableBody,
@@ -25,263 +31,280 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate, formatMoney, formatMoneyCompact, formatNumber, formatPercent } from "@/lib/format";
+import { downloadCsv } from "@/lib/export";
+import { formatDate, formatMoney, formatNumber, formatPercent } from "@/lib/format";
+
+const TIER_STYLE: Record<BuyerTier, string> = {
+  VIP: "bg-primary text-primary-foreground",
+  Returning: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+  New: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
+  "One-time": "bg-muted text-muted-foreground",
+};
+
+const TIER_HELP = "VIP: 3+ orders · Returning: 2 orders · New: first order in the last 30 days · One-time: a single order, longer ago";
+
+function BuyerDrawer({ buyer, onClose }: { buyer: BuyerStat | null; onClose: () => void }) {
+  const { allOrders } = useSalesData();
+  const privacy = usePrivacy();
+  const history = useMemo(
+    () => (buyer ? allOrders.filter((o) => o.buyerKey === buyer.key).reverse() : []),
+    [allOrders, buyer]
+  );
+
+  return (
+    <Sheet open={buyer !== null} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
+        {buyer && (
+          <>
+            <SheetHeader>
+              <SheetTitle>{privacy.name(buyer.name)}</SheetTitle>
+              <SheetDescription>
+                {privacy.location(buyer.location) ?? "Location unknown"} · customer since{" "}
+                {formatDate(buyer.firstOrder)}
+              </SheetDescription>
+            </SheetHeader>
+            <div className="grid gap-4 px-4 pb-8">
+              <div className="flex items-center gap-2">
+                <Badge className={TIER_STYLE[buyer.tier]}>{buyer.tier}</Badge>
+                {buyer.usedCoupon && <Badge variant="secondary">Uses coupons</Badge>}
+              </div>
+              <dl className="grid grid-cols-3 gap-3 text-sm">
+                <div>
+                  <dt className="text-xs text-muted-foreground">Orders</dt>
+                  <dd className="font-semibold tabular-nums">{buyer.orders}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Revenue</dt>
+                  <dd className="font-semibold tabular-nums">{formatMoney(buyer.revenue)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Avg order</dt>
+                  <dd className="font-semibold tabular-nums">{formatMoney(buyer.avgOrderValue)}</dd>
+                </div>
+              </dl>
+              <div>
+                <h3 className="mb-2 text-sm font-medium">Order history</h3>
+                <ul className="grid gap-2">
+                  {history.map((o) => (
+                    <li key={o.key}>
+                      <Link
+                        href={`/orders?order=${encodeURIComponent(o.key)}`}
+                        className="block rounded-lg border p-3 transition-colors hover:bg-accent/50"
+                      >
+                        <div className="flex justify-between gap-3 text-sm">
+                          <span className="font-medium">{formatDate(o.saleDate)}</span>
+                          <span className="tabular-nums">{formatMoney(o.money.revenue)}</span>
+                        </div>
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {o.itemsLabel}
+                          {o.coupons.length > 0 ? ` · ${o.coupons.join(", ")}` : ""}
+                          {o.money.refund > 0 ? " · refunded" : ""}
+                        </p>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
 
 export default function CustomersPage() {
-  const { rows, loading, hasData } = useSalesData();
+  const { orders, allOrders, loading, hasData, through, range } = useSalesData();
+  const privacy = usePrivacy();
   const [geoMode, setGeoMode] = useState<"state" | "country">("state");
   const [buyerFilter, setBuyerFilter] = useState<"all" | "repeat">("all");
+  const [showAll, setShowAll] = useState(false);
+  const [selectedKey, setSelectedKey] = useState<string | null>(() => initialParam("buyer"));
 
-  const kpis = useMemo(() => customerKpis(rows), [rows]);
-  const shopKpis = useMemo(() => computeKpis(rows), [rows]);
-  const buyers = useMemo(() => buyerStats(rows), [rows]);
-  const geo = useMemo(() => geoBreakdown(rows, geoMode), [rows, geoMode]);
-  const coupons = useMemo(() => couponAnalysis(rows), [rows]);
-  const fulfillment = useMemo(() => fulfillmentStats(rows), [rows]);
+  const kpis = useMemo(() => customerKpis(orders), [orders]);
+  const buyers = useMemo(() => buyerStats(orders, through, allOrders), [orders, through, allOrders]);
+  const shop = useMemo(() => computeKpis(orders, allOrders), [orders, allOrders]);
+  const geo = useMemo(() => geoBreakdown(orders, geoMode), [orders, geoMode]);
 
-  const visibleBuyers = useMemo(
-    () => (buyerFilter === "repeat" ? buyers.filter((b) => b.orders > 1) : buyers).slice(0, 50),
+  const listed = useMemo(
+    () => (buyerFilter === "repeat" ? buyers.filter((b) => b.tier === "VIP" || b.tier === "Returning") : buyers),
     [buyers, buyerFilter]
   );
+  const selected = useMemo(() => {
+    if (!selectedKey) return null;
+    return (
+      buyers.find((b) => b.key === selectedKey) ??
+      buyerStats(allOrders, through).find((b) => b.key === selectedKey) ??
+      null
+    );
+  }, [selectedKey, buyers, allOrders, through]);
 
   if (loading) return <LoadingState />;
   if (!hasData) return <EmptyState />;
 
+  const visible = showAll ? listed : listed.slice(0, 10);
+
   return (
     <div>
-      <PageHeader title="Customers" />
+      <PageHeader title="Customers" description={`Buyers who ordered in ${range.label.toLowerCase()}`} />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard label="Unique buyers" value={formatNumber(kpis.uniqueBuyers)} />
-        <KpiCard
-          label="Repeat rate"
-          value={formatPercent(kpis.repeatRate)}
-          hint="Buyers with 2+ orders"
-        />
-        <KpiCard
-          label="Avg lifetime value"
-          value={formatMoney(kpis.avgLifetimeValue)}
-          hint="Net revenue per buyer"
-        />
-        <KpiCard
-          label="Median reorder gap"
-          value={
-            kpis.medianDaysBetweenOrders != null
-              ? `${Math.round(kpis.medianDaysBetweenOrders)} days`
-              : "—"
-          }
-          hint="Between repeat purchases"
-        />
-      </div>
+      {orders.length === 0 ? (
+        <EmptyRange />
+      ) : (
+        <div className="grid gap-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <KpiCard label="Buyers" value={formatNumber(kpis.uniqueBuyers)} />
+            <KpiCard
+              label="Repeat buyers"
+              metric="repeatBuyerRate"
+              value={formatPercent(shop.repeatBuyerRate)}
+              hint={`${formatNumber(shop.repeatBuyers)} of ${formatNumber(shop.uniqueBuyers)} buyers`}
+            />
+            <KpiCard
+              label="Avg revenue per buyer"
+              metric="lifetimeValue"
+              value={formatMoney(kpis.avgLifetimeValue)}
+            />
+            <KpiCard
+              label="Typical time to reorder"
+              metric="reorderGap"
+              value={
+                kpis.medianDaysBetweenOrders != null
+                  ? `${Math.round(kpis.medianDaysBetweenOrders)} days`
+                  : "—"
+              }
+            />
+          </div>
 
-      {shopKpis.refundedOrders > 0 && (
-        <Card className="mt-4">
-          <CardHeader>
-            <CardTitle>Refunds</CardTitle>
-            <CardDescription>
-              From your payments export. Refunds attach to their original order
-              and never count as new purchases.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid grid-cols-3 gap-3">
-            <div className="rounded-lg border p-3">
-              <p className="text-lg font-semibold tabular-nums">
-                {formatMoney(shopKpis.totalRefunds)}
-              </p>
-              <p className="text-xs text-muted-foreground">Total refunded</p>
+          <div className="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
+            <Card>
+              <CardHeader>
+                <CardTitle>New vs returning buyers</CardTitle>
+                <CardDescription>Buyers each month, split by whether it was their first order</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <StackedMonthlyChart
+                  data={kpis.newVsReturning}
+                  series={[
+                    { dataKey: "newBuyers", name: "First order" },
+                    { dataKey: "returningBuyers", name: "Returning" },
+                  ]}
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Where orders ship</CardTitle>
+                <CardDescription>Orders by {geoMode === "state" ? "US state" : "country"}</CardDescription>
+                <CardAction>
+                  <Tabs value={geoMode} onValueChange={(v) => setGeoMode(v as "state" | "country")}>
+                    <TabsList>
+                      <TabsTrigger value="state">US states</TabsTrigger>
+                      <TabsTrigger value="country">Countries</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </CardAction>
+              </CardHeader>
+              <CardContent>
+                <BarList
+                  data={geo.map((g) => ({ name: g.region, value: g.orders, sub: formatMoney(g.revenue) }))}
+                  maxItems={8}
+                />
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="p-0">
+            <CardHeader className="p-4 pb-0">
+              <CardTitle>Top buyers</CardTitle>
+              <CardDescription title={TIER_HELP}>By revenue. {TIER_HELP}.</CardDescription>
+              <CardAction className="flex items-center gap-2">
+                <Tabs
+                  value={buyerFilter}
+                  onValueChange={(v) => {
+                    setBuyerFilter(v as "all" | "repeat");
+                    setShowAll(false);
+                  }}
+                >
+                  <TabsList>
+                    <TabsTrigger value="all">All</TabsTrigger>
+                    <TabsTrigger value="repeat">Repeat</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    downloadCsv(
+                      "makermetrics-buyers.csv",
+                      ["Buyer", "Location", "Tier", "Orders", "Units", "Revenue", "Avg order", "First order", "Last order", "Used coupon"],
+                      listed.map((b) => [
+                        b.name, b.location, b.tier, b.orders, b.units, b.revenue,
+                        Math.round(b.avgOrderValue * 100) / 100, b.firstOrder, b.lastOrder,
+                        b.usedCoupon ? "yes" : "no",
+                      ])
+                    )
+                  }
+                >
+                  <Download className="size-4" />
+                  <span className="hidden sm:inline">Export</span>
+                </Button>
+              </CardAction>
+            </CardHeader>
+            <div className="overflow-x-auto p-2">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Buyer</TableHead>
+                    <TableHead className="hidden md:table-cell">Location</TableHead>
+                    <TableHead>Tier</TableHead>
+                    <TableHead className="text-right">Orders</TableHead>
+                    <TableHead className="text-right">Revenue</TableHead>
+                    <TableHead className="hidden text-right sm:table-cell">Last order</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visible.map((b) => (
+                    <TableRow key={b.key} className="cursor-pointer" onClick={() => setSelectedKey(b.key)}>
+                      <TableCell className="max-w-[160px] truncate font-medium sm:max-w-none">
+                        {privacy.name(b.name)}
+                      </TableCell>
+                      <TableCell className="hidden text-muted-foreground md:table-cell">
+                        {privacy.location(b.location) ?? "—"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={TIER_STYLE[b.tier]}>{b.tier}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{b.orders}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatMoney(b.revenue)}</TableCell>
+                      <TableCell className="hidden whitespace-nowrap text-right text-muted-foreground sm:table-cell">
+                        {formatDate(b.lastOrder)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {listed.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                        No repeat buyers in this period yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+              {!showAll && listed.length > 10 && (
+                <div className="p-2 text-center">
+                  <Button variant="ghost" size="sm" onClick={() => setShowAll(true)}>
+                    View all {formatNumber(listed.length)} buyers
+                  </Button>
+                </div>
+              )}
             </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-lg font-semibold tabular-nums">
-                {formatNumber(shopKpis.refundedOrders)}
-              </p>
-              <p className="text-xs text-muted-foreground">Orders refunded</p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-lg font-semibold tabular-nums">
-                {formatPercent(shopKpis.refundRate)}
-              </p>
-              <p className="text-xs text-muted-foreground">Refund rate</p>
-            </div>
-          </CardContent>
-        </Card>
+          </Card>
+        </div>
       )}
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>New vs returning buyers</CardTitle>
-            <CardDescription>Distinct buyers placing orders each month</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <StackedMonthlyChart
-              data={kpis.newVsReturning}
-              series={[
-                { dataKey: "newBuyers", name: "New" },
-                { dataKey: "returningBuyers", name: "Returning" },
-              ]}
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>Where buyers are</CardTitle>
-            <Tabs value={geoMode} onValueChange={(v) => setGeoMode(v as "state" | "country")}>
-              <TabsList>
-                <TabsTrigger value="state">US states</TabsTrigger>
-                <TabsTrigger value="country">Countries</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </CardHeader>
-          <CardContent>
-            <BarList
-              data={geo.map((g) => ({ name: g.region, value: g.orders }))}
-              maxItems={8}
-            />
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="mt-4 p-0">
-        <CardHeader className="flex-row items-center justify-between p-4 pb-0 sm:p-6 sm:pb-0">
-          <CardTitle>Top buyers</CardTitle>
-          <Tabs
-            value={buyerFilter}
-            onValueChange={(v) => setBuyerFilter(v as "all" | "repeat")}
-          >
-            <TabsList>
-              <TabsTrigger value="all">All</TabsTrigger>
-              <TabsTrigger value="repeat">Repeat only</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </CardHeader>
-        <div className="overflow-x-auto p-2">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Buyer</TableHead>
-                <TableHead>Tier</TableHead>
-                <TableHead className="text-right">Orders</TableHead>
-                <TableHead className="hidden text-right sm:table-cell">Units</TableHead>
-                <TableHead className="text-right">Lifetime net</TableHead>
-                <TableHead className="hidden text-right md:table-cell">Avg order</TableHead>
-                <TableHead className="hidden lg:table-cell">Last order</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {visibleBuyers.map((b) => (
-                <TableRow key={b.key}>
-                  <TableCell className="max-w-[160px] truncate font-medium sm:max-w-none">
-                    {b.name}
-                    {b.location && (
-                      <span className="ml-2 hidden text-xs text-muted-foreground xl:inline">
-                        {b.location}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={b.tier === "VIP" ? "default" : "secondary"}
-                      className={
-                        b.tier === "Returning"
-                          ? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-                          : undefined
-                      }
-                    >
-                      {b.tier}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">{b.orders}</TableCell>
-                  <TableCell className="hidden text-right tabular-nums sm:table-cell">
-                    {b.units}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums font-medium">
-                    {formatMoneyCompact(b.totalNet)}
-                  </TableCell>
-                  <TableCell className="hidden text-right tabular-nums md:table-cell">
-                    {formatMoney(b.avgOrderValue)}
-                  </TableCell>
-                  <TableCell className="hidden text-muted-foreground lg:table-cell">
-                    {formatDate(b.lastOrder)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </Card>
-
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Coupon effectiveness</CardTitle>
-            <CardDescription>
-              {formatNumber(coupons.withCoupon.orders)} of{" "}
-              {formatNumber(coupons.withCoupon.orders + coupons.withoutCoupon.orders)} orders
-              used a coupon · {formatMoneyCompact(coupons.totalDiscountCost)} given in discounts
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4">
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground">Avg net (with coupon)</p>
-                <p className="text-lg font-semibold tabular-nums">
-                  {formatMoney(coupons.withCoupon.avgNet)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {coupons.withCoupon.avgUnits != null
-                    ? `${coupons.withCoupon.avgUnits.toFixed(1)} units/order`
-                    : ""}
-                </p>
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground">Avg net (no coupon)</p>
-                <p className="text-lg font-semibold tabular-nums">
-                  {formatMoney(coupons.withoutCoupon.avgNet)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {coupons.withoutCoupon.avgUnits != null
-                    ? `${coupons.withoutCoupon.avgUnits.toFixed(1)} units/order`
-                    : ""}
-                </p>
-              </div>
-            </div>
-            {coupons.coupons.length > 0 && (
-              <div className="grid gap-1.5">
-                {coupons.coupons.slice(0, 6).map((c) => (
-                  <div key={c.code} className="flex items-center justify-between text-sm">
-                    <Badge variant="secondary">{c.code}</Badge>
-                    <span className="text-muted-foreground">
-                      {c.orders} orders · {formatMoney(c.totalDiscount)} discounted
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Fulfillment speed</CardTitle>
-            <CardDescription>
-              {fulfillment.ordersMeasured > 0
-                ? `Median ${fulfillment.medianDays?.toFixed(0)} day(s) to ship · ${formatPercent(
-                    fulfillment.sameOrNextDayRate
-                  )} shipped within 1 day`
-                : "No paid + shipped date pairs in this range"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <SimpleBarChart
-              data={fulfillment.histogram}
-              dataKey="count"
-              name="Orders"
-              labelKey="bucket"
-            />
-          </CardContent>
-        </Card>
-      </div>
+      <BuyerDrawer buyer={selected} onClose={() => setSelectedKey(null)} />
     </div>
   );
 }

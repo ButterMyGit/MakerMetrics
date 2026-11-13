@@ -1,5 +1,8 @@
 import Papa from "papaparse";
 import type { SaleItemDbRow } from "@/lib/types";
+import { deriveItemParts, deriveStyle, parseCoupons } from "./normalize";
+
+export { deriveItemParts, deriveStyle } from "./normalize";
 
 /**
  * TypeScript port of the legacy watcher.py ingestion pipeline.
@@ -97,6 +100,12 @@ function cleanInt(v: string | undefined | null): number | null {
   return Number.isFinite(n) ? Math.trunc(n) : null;
 }
 
+/** "OCT20OFF;OCT20OFF" -> "OCT20OFF"; several distinct codes are joined with ";". */
+function cleanCoupon(v: string | undefined | null): string | null {
+  const codes = parseCoupons(v);
+  return codes.length > 0 ? codes.join(";") : null;
+}
+
 /** Etsy dates come as MM/DD/YY or MM/DD/YYYY (sometimes YYYY-MM-DD). */
 function cleanDate(v: string | undefined | null): string | null {
   if (v == null) return null;
@@ -136,29 +145,6 @@ function makeGetter(row: Record<string, string>) {
     }
     return null;
   };
-}
-
-// ---------------------------------------------------------------------------
-// Enrichment (derived fields)
-// ---------------------------------------------------------------------------
-
-export function deriveItemParts(itemName: string | null): {
-  cardName: string | null;
-  productType: string | null;
-} {
-  if (!itemName) return { cardName: null, productType: null };
-  const idx = itemName.indexOf("|");
-  if (idx === -1) return { cardName: itemName.trim(), productType: null };
-  return {
-    cardName: itemName.slice(0, idx).trim() || null,
-    productType: itemName.slice(idx + 1).trim() || null,
-  };
-}
-
-export function deriveStyle(variations: string | null): string | null {
-  if (!variations) return null;
-  const s = variations.replace(/^(Style:|Custom Property:)\s*/i, "").trim();
-  return s === "" ? null : s;
 }
 
 // ---------------------------------------------------------------------------
@@ -274,7 +260,7 @@ function buildRowFromItem(
     refund_amount: refund,
     order_type: cleanString(get("Order Type", "Item Order Type")),
     payment_type: cleanString(get("Payment Type", "Item Payment Type", "Payment Method")),
-    coupon_code: cleanString(get("Coupon Code", "Order Coupon Code")),
+    coupon_code: cleanCoupon(get("Coupon Code", "Order Coupon Code")),
     coupon_details: cleanString(get("Coupon Details", "Order Coupon Details")),
     buyer_username: cleanString(get("Buyer Username", "Buyer", "Buyer_x")),
     buyer_user_id: cleanId(get("Buyer User ID")),

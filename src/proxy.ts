@@ -28,11 +28,13 @@ export default async function proxy(request: NextRequest) {
     }
   );
 
-  // Refresh the session if needed. Do not run logic between client creation
-  // and getUser() — it can cause random logouts.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Refresh the session if needed and verify the access token. getClaims()
+  // checks the JWT signature locally when the project uses asymmetric signing
+  // keys, so most navigations skip a round trip to the Auth server. Do not
+  // run logic between client creation and this call — it can cause random
+  // logouts.
+  const { data } = await supabase.auth.getClaims();
+  const user = data?.claims?.sub ? data.claims : null;
 
   const { pathname } = request.nextUrl;
   const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));

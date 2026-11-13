@@ -1,180 +1,40 @@
 "use client";
 
-import {
-  Area,
-  Bar,
-  CartesianGrid,
-  Cell,
-  ComposedChart,
-  Line,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { formatMoneyCompact, formatMonth, formatNumber } from "@/lib/format";
+import dynamic from "next/dynamic";
+import { formatMoneyCompact, formatNumber } from "@/lib/format";
 
-export const CHART_COLORS = [
-  "var(--chart-1)",
-  "var(--chart-2)",
-  "var(--chart-3)",
-  "var(--chart-4)",
-  "var(--chart-5)",
-];
+/**
+ * Chart components. The Recharts-based ones live in charts-impl.tsx and are
+ * loaded on demand, so pages become interactive before the chart library
+ * arrives. BarList and Sparkline are plain CSS/SVG and render immediately.
+ */
 
-function compactValue(v: number, money: boolean): string {
-  if (money) {
-    return Math.abs(v) >= 1000
-      ? `$${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k`
-      : `$${Math.round(v)}`;
-  }
-  return Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v));
+export type { ForecastChartRow, TrendPoint } from "./charts-impl";
+
+function ChartSkeleton() {
+  return <div className="h-[260px] w-full animate-pulse rounded-lg bg-muted/60" />;
 }
 
-interface TooltipPayloadEntry {
-  name?: string;
-  value?: number | string;
-  color?: string;
-  dataKey?: string | number;
-}
-
-function ChartTooltip({
-  active,
-  payload,
-  label,
-  money,
-  labelFormatter,
-}: {
-  active?: boolean;
-  payload?: TooltipPayloadEntry[];
-  label?: string | number;
-  money?: boolean;
-  labelFormatter?: (label: string) => string;
-}) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="rounded-lg border bg-popover px-3 py-2 text-xs shadow-md">
-      <p className="mb-1 font-medium">
-        {labelFormatter ? labelFormatter(String(label)) : String(label)}
-      </p>
-      {payload.map((entry, i) => (
-        <p key={i} className="flex items-center gap-1.5 tabular-nums text-muted-foreground">
-          <span
-            className="inline-block size-2 rounded-full"
-            style={{ background: entry.color }}
-          />
-          {entry.name}:{" "}
-          <span className="font-medium text-foreground">
-            {money
-              ? formatMoneyCompact(Number(entry.value))
-              : formatNumber(Number(entry.value))}
-          </span>
-        </p>
-      ))}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-
-export function MonthlyTrendChart({
-  data,
-  dataKey,
-  name,
-  money = false,
-  height = 280,
-}: {
-  data: object[];
-  dataKey: string;
-  name: string;
-  money?: boolean;
-  height?: number;
-}) {
-  return (
-    <ResponsiveContainer width="100%" height={height}>
-      <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-        <XAxis
-          dataKey="month"
-          tickFormatter={(m: string) => formatMonth(m).replace(" 20", " '")}
-          tick={{ fontSize: 11 }}
-          stroke="var(--muted-foreground)"
-          tickLine={false}
-          axisLine={false}
-          minTickGap={24}
-        />
-        <YAxis
-          tickFormatter={(v: number) => compactValue(v, money)}
-          tick={{ fontSize: 11 }}
-          stroke="var(--muted-foreground)"
-          tickLine={false}
-          axisLine={false}
-          width={44}
-        />
-        <Tooltip
-          content={<ChartTooltip money={money} labelFormatter={formatMonth} />}
-          cursor={{ fill: "var(--muted)", opacity: 0.5 }}
-        />
-        <Bar dataKey={dataKey} name={name} fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
-      </ComposedChart>
-    </ResponsiveContainer>
-  );
-}
-
-export function DonutChart({
-  data,
-  height = 240,
-}: {
-  data: { name: string; value: number }[];
-  height?: number;
-}) {
-  const top = data.slice(0, 5);
-  const restTotal = data.slice(5).reduce((s, d) => s + d.value, 0);
-  const display = restTotal > 0 ? [...top, { name: "Other", value: restTotal }] : top;
-  const total = display.reduce((s, d) => s + d.value, 0);
-
-  return (
-    <div className="flex flex-col items-center gap-3 sm:flex-row">
-      <ResponsiveContainer width="100%" height={height} className="max-w-[240px]">
-        <PieChart>
-          <Pie
-            data={display}
-            dataKey="value"
-            nameKey="name"
-            innerRadius="60%"
-            outerRadius="90%"
-            paddingAngle={2}
-            strokeWidth={0}
-          >
-            {display.map((_, i) => (
-              <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-            ))}
-          </Pie>
-          <Tooltip content={<ChartTooltip />} />
-        </PieChart>
-      </ResponsiveContainer>
-      <ul className="grid w-full gap-1.5 text-sm">
-        {display.map((d, i) => (
-          <li key={d.name} className="flex items-center gap-2">
-            <span
-              className="inline-block size-2.5 shrink-0 rounded-full"
-              style={{ background: CHART_COLORS[i % CHART_COLORS.length] }}
-            />
-            <span className="min-w-0 flex-1 truncate text-muted-foreground">{d.name}</span>
-            <span className="tabular-nums font-medium">
-              {formatNumber(d.value)}
-              <span className="ml-1 text-xs text-muted-foreground">
-                {total > 0 ? `${((d.value / total) * 100).toFixed(0)}%` : ""}
-              </span>
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
+export const MonthlyTrendChart = dynamic(
+  () => import("./charts-impl").then((m) => m.MonthlyTrendChart),
+  { ssr: false, loading: ChartSkeleton }
+);
+export const DonutChart = dynamic(() => import("./charts-impl").then((m) => m.DonutChart), {
+  ssr: false,
+  loading: ChartSkeleton,
+});
+export const ForecastChart = dynamic(
+  () => import("./charts-impl").then((m) => m.ForecastChart),
+  { ssr: false, loading: ChartSkeleton }
+);
+export const StackedMonthlyChart = dynamic(
+  () => import("./charts-impl").then((m) => m.StackedMonthlyChart),
+  { ssr: false, loading: ChartSkeleton }
+);
+export const SimpleBarChart = dynamic(
+  () => import("./charts-impl").then((m) => m.SimpleBarChart),
+  { ssr: false, loading: ChartSkeleton }
+);
 
 /** CSS horizontal bar list — crisp on mobile, no SVG needed. */
 export function BarList({
@@ -182,20 +42,21 @@ export function BarList({
   money = false,
   maxItems = 10,
 }: {
-  data: { name: string; value: number }[];
+  data: { name: string; value: number; sub?: string }[];
   money?: boolean;
   maxItems?: number;
 }) {
   const items = data.slice(0, maxItems);
   const max = Math.max(...items.map((d) => d.value), 1);
   return (
-    <ul className="grid gap-2.5">
+    <ul className="grid grid-cols-[minmax(0,1fr)] gap-2.5">
       {items.map((d) => (
         <li key={d.name} className="grid gap-1">
           <div className="flex items-baseline justify-between gap-3 text-sm">
             <span className="min-w-0 truncate">{d.name}</span>
             <span className="shrink-0 tabular-nums font-medium">
               {money ? formatMoneyCompact(d.value) : formatNumber(d.value)}
+              {d.sub && <span className="ml-1.5 text-xs font-normal text-muted-foreground">{d.sub}</span>}
             </span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-muted">
@@ -210,172 +71,36 @@ export function BarList({
   );
 }
 
-export function ForecastChart({
-  data,
-  money = false,
-  height = 300,
-}: {
-  /** rows with: month, actual?, estimated?, forecast?, lower?, upper? */
-  data: Record<string, number | string | null>[];
-  money?: boolean;
-  height?: number;
-}) {
+/** Tiny inline trend: one bar per month, oldest first. */
+export function Sparkline({ values, className }: { values: number[]; className?: string }) {
+  const max = Math.max(...values, 1);
+  const width = 6;
+  const gap = 2;
+  const height = 20;
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-        <XAxis
-          dataKey="month"
-          tickFormatter={(m: string) => formatMonth(m).replace(" 20", " '")}
-          tick={{ fontSize: 11 }}
-          stroke="var(--muted-foreground)"
-          tickLine={false}
-          axisLine={false}
-          minTickGap={24}
-        />
-        <YAxis
-          tickFormatter={(v: number) => compactValue(v, money)}
-          tick={{ fontSize: 11 }}
-          stroke="var(--muted-foreground)"
-          tickLine={false}
-          axisLine={false}
-          width={44}
-        />
-        <Tooltip content={<ChartTooltip money={money} labelFormatter={formatMonth} />} />
-        <Area
-          dataKey="upper"
-          name="Upper"
-          stroke="none"
-          fill="var(--chart-2)"
-          fillOpacity={0.12}
-          legendType="none"
-          activeDot={false}
-        />
-        <Area
-          dataKey="lower"
-          name="Lower"
-          stroke="none"
-          fill="var(--background)"
-          fillOpacity={1}
-          legendType="none"
-          activeDot={false}
-        />
-        <Line
-          dataKey="actual"
-          name="Actual"
-          stroke="var(--chart-1)"
-          strokeWidth={2}
-          dot={false}
-          connectNulls={false}
-        />
-        <Line
-          dataKey="estimated"
-          name="Est. this month"
-          stroke="var(--chart-1)"
-          strokeWidth={2}
-          strokeDasharray="3 3"
-          dot={false}
-          connectNulls={false}
-        />
-        <Line
-          dataKey="forecast"
-          name="Forecast"
-          stroke="var(--chart-2)"
-          strokeWidth={2}
-          strokeDasharray="6 4"
-          dot={false}
-          connectNulls
-        />
-      </ComposedChart>
-    </ResponsiveContainer>
-  );
-}
-
-export function StackedMonthlyChart({
-  data,
-  series,
-  height = 260,
-}: {
-  data: object[];
-  series: { dataKey: string; name: string }[];
-  height?: number;
-}) {
-  return (
-    <ResponsiveContainer width="100%" height={height}>
-      <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-        <XAxis
-          dataKey="month"
-          tickFormatter={(m: string) => formatMonth(m).replace(" 20", " '")}
-          tick={{ fontSize: 11 }}
-          stroke="var(--muted-foreground)"
-          tickLine={false}
-          axisLine={false}
-          minTickGap={24}
-        />
-        <YAxis
-          tick={{ fontSize: 11 }}
-          stroke="var(--muted-foreground)"
-          tickLine={false}
-          axisLine={false}
-          width={36}
-        />
-        <Tooltip content={<ChartTooltip labelFormatter={formatMonth} />} />
-        {series.map((s, i) => (
-          <Bar
-            key={s.dataKey}
-            dataKey={s.dataKey}
-            name={s.name}
-            stackId="stack"
-            fill={CHART_COLORS[i % CHART_COLORS.length]}
-            radius={i === series.length - 1 ? [4, 4, 0, 0] : undefined}
+    <svg
+      viewBox={`0 0 ${values.length * (width + gap) - gap} ${height}`}
+      width={values.length * (width + gap) - gap}
+      height={height}
+      className={className}
+      role="img"
+      aria-label={`Units per month, oldest first: ${values.join(", ")}`}
+    >
+      {values.map((v, i) => {
+        const h = v === 0 ? 1.5 : Math.max(3, (v / max) * height);
+        return (
+          <rect
+            key={i}
+            x={i * (width + gap)}
+            y={height - h}
+            width={width}
+            height={h}
+            rx={1}
+            fill={v === 0 ? "var(--border)" : "var(--chart-1)"}
+            opacity={v === 0 ? 1 : 0.35 + 0.65 * (i / Math.max(1, values.length - 1))}
           />
-        ))}
-      </ComposedChart>
-    </ResponsiveContainer>
-  );
-}
-
-export function SimpleBarChart({
-  data,
-  dataKey,
-  name,
-  labelKey = "day",
-  money = false,
-  height = 220,
-}: {
-  data: object[];
-  dataKey: string;
-  name: string;
-  labelKey?: string;
-  money?: boolean;
-  height?: number;
-}) {
-  return (
-    <ResponsiveContainer width="100%" height={height}>
-      <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-        <XAxis
-          dataKey={labelKey}
-          tick={{ fontSize: 11 }}
-          stroke="var(--muted-foreground)"
-          tickLine={false}
-          axisLine={false}
-        />
-        <YAxis
-          tickFormatter={(v: number) => compactValue(v, money)}
-          tick={{ fontSize: 11 }}
-          stroke="var(--muted-foreground)"
-          tickLine={false}
-          axisLine={false}
-          width={40}
-        />
-        <Tooltip
-          content={<ChartTooltip money={money} />}
-          cursor={{ fill: "var(--muted)", opacity: 0.5 }}
-        />
-        <Bar dataKey={dataKey} name={name} fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
-      </ComposedChart>
-    </ResponsiveContainer>
+        );
+      })}
+    </svg>
   );
 }

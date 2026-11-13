@@ -9,7 +9,9 @@ import {
   Receipt,
   Sparkles,
   TrendingUp,
-  Upload,
+  EyeOff,
+  Eye,
+  Search,
   Users,
   Settings,
   MoreHorizontal,
@@ -19,16 +21,17 @@ import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/hooks/use-profile";
+import { clearSalesCache } from "@/lib/data/sales-cache";
 import { useState } from "react";
+import { usePrivacy } from "@/hooks/use-privacy";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/orders", label: "Orders", icon: Receipt },
   { href: "/products", label: "Products", icon: Package },
   { href: "/customers", label: "Customers", icon: Users },
-  { href: "/forecast", label: "Forecast", icon: TrendingUp },
+  { href: "/forecast", label: "Outlook", icon: TrendingUp },
   { href: "/assistant", label: "AI Analyst", icon: Sparkles },
-  { href: "/import", label: "Import data", icon: Upload },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -37,6 +40,7 @@ function useSignOut() {
   return async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
+    await clearSalesCache();
     router.push("/login");
     router.refresh();
   };
@@ -46,6 +50,7 @@ export function DesktopSidebar() {
   const pathname = usePathname();
   const signOut = useSignOut();
   const { shopName } = useProfile();
+  const privacy = usePrivacy();
 
   return (
     <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground lg:flex">
@@ -89,7 +94,27 @@ export function DesktopSidebar() {
           );
         })}
       </nav>
-      <div className="px-3 pb-4">
+      <div className="grid gap-1 px-3 pb-4">
+        <button
+          onClick={() =>
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }))
+          }
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+        >
+          <Search className="size-4" />
+          Search
+          <kbd className="ml-auto rounded border px-1.5 text-[10px] font-normal">Ctrl K</kbd>
+        </button>
+        <button
+          onClick={privacy.toggle}
+          aria-pressed={privacy.enabled}
+          title="Hide buyer names and cities, for screenshots and screen sharing"
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+        >
+          {privacy.enabled ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+          Privacy mode
+          <span className="ml-auto text-xs font-normal">{privacy.enabled ? "On" : "Off"}</span>
+        </button>
         <button
           onClick={signOut}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
@@ -104,7 +129,7 @@ export function DesktopSidebar() {
 
 const MOBILE_TABS = NAV_ITEMS.slice(0, 3); // Dashboard, Orders, Products
 const MOBILE_ASSISTANT = NAV_ITEMS[5];
-const MOBILE_MORE = [NAV_ITEMS[3], NAV_ITEMS[4], NAV_ITEMS[6], NAV_ITEMS[7]];
+const MOBILE_MORE = [NAV_ITEMS[3], NAV_ITEMS[4], NAV_ITEMS[6]];
 
 export function MobileTabBar() {
   const pathname = usePathname();

@@ -54,8 +54,9 @@ __pycache__/
 /.agents/
 /.codex/
 
-# private database migration history
-/supabase/migrations/
+# local Supabase CLI state
+/supabase/.temp/
+/supabase/.branches/
 
 # retired local prototype
 /legacy/

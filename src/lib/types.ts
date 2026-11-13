@@ -1,3 +1,12 @@
+import {
+  decodeEntities,
+  deriveItemParts,
+  parseCoupons,
+  parseVariations,
+  variationLabel,
+  type Variation,
+} from "@/lib/etsy/normalize";
+
 /** One Etsy transaction (line item). Mirrors public.sale_items. */
 export interface SaleRow {
   transactionId: string;
@@ -49,6 +58,14 @@ export interface SaleRow {
   shipState: string | null;
   shipZipcode: string | null;
   shipCountry: string | null;
+
+  // Derived when the row is read (not stored):
+  /** Coupon codes on this line, upper-cased and de-duplicated. */
+  coupons: string[];
+  /** Chosen options parsed from `variations`. */
+  variationList: Variation[];
+  /** Stable product identity: the Etsy listing when known, otherwise the title. */
+  productKey: string | null;
 }
 
 /** snake_case shape stored in / returned by Supabase. */
@@ -98,6 +115,11 @@ export interface SaleItemDbRow {
 }
 
 export function dbRowToSaleRow(r: SaleItemDbRow): SaleRow {
+  const itemName = r.item_name ? decodeEntities(r.item_name) : null;
+  const parts = deriveItemParts(itemName);
+  const cardName = parts.cardName ?? r.card_name;
+  const variationList = parseVariations(r.variations);
+  const coupons = parseCoupons(r.coupon_code);
   return {
     transactionId: r.transaction_id,
     orderId: r.order_id,
@@ -105,11 +127,11 @@ export function dbRowToSaleRow(r: SaleItemDbRow): SaleRow {
     saleDate: r.sale_date,
     datePaid: r.date_paid,
     dateShipped: r.date_shipped,
-    itemName: r.item_name,
-    cardName: r.card_name,
-    productType: r.product_type,
+    itemName,
+    cardName,
+    productType: parts.productType ?? r.product_type,
     variations: r.variations,
-    style: r.style,
+    style: variationLabel(variationList) ?? r.style,
     sku: r.sku,
     quantity: r.quantity ?? 1,
     price: r.price,
@@ -132,7 +154,7 @@ export function dbRowToSaleRow(r: SaleItemDbRow): SaleRow {
     refundAmount: r.refund_amount,
     orderType: r.order_type,
     paymentType: r.payment_type,
-    couponCode: r.coupon_code,
+    couponCode: coupons.length > 0 ? coupons.join(", ") : null,
     couponDetails: r.coupon_details,
     buyerUsername: r.buyer_username,
     buyerUserId: r.buyer_user_id,
@@ -141,5 +163,8 @@ export function dbRowToSaleRow(r: SaleItemDbRow): SaleRow {
     shipState: r.ship_state,
     shipZipcode: r.ship_zipcode,
     shipCountry: r.ship_country,
+    coupons,
+    variationList,
+    productKey: r.listing_id ? `l:${r.listing_id}` : cardName ? `n:${cardName}` : null,
   };
 }

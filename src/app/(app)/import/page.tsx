@@ -6,7 +6,6 @@ import { useSalesData } from "@/hooks/use-sales-data";
 import { useProfile } from "@/hooks/use-profile";
 import { buildSaleItems, parseCsvFile, type ParsedCsv } from "@/lib/etsy/parse";
 import { createClient } from "@/lib/supabase/client";
-import { isDemoEmail } from "@/lib/demo-account";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,8 +29,7 @@ const FORMAT_LABELS: Record<ParsedCsv["format"], { label: string; tone: "ok" | "
 export default function ImportPage() {
   const router = useRouter();
   const { refresh } = useSalesData();
-  const { email } = useProfile();
-  const isDemo = isDemoEmail(email);
+  const { isDemo } = useProfile();
   const [files, setFiles] = useState<ParsedCsv[]>([]);
   const [dragging, setDragging] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -117,9 +115,11 @@ export default function ImportPage() {
           <CardDescription>
             Shop Manager → Settings → Options → Download Data. Download{" "}
             <span className="font-medium text-foreground">Sold Order Items</span> (required)
-            and <span className="font-medium text-foreground">Sold Orders</span> (recommended
-            — adds exact order totals and fees) for each year. Re-importing the same files is
-            always safe: rows are deduplicated by transaction.
+            and <span className="font-medium text-foreground">Sold Orders</span> (recommended:
+            adds buyer names, processing fees and refunds) for each year. Optionally add{" "}
+            <span className="font-medium text-foreground">Etsy Payments Sales</span> for exact
+            refund amounts. To update, download this year again and drop the files here:
+            re-importing is always safe, because rows are matched by transaction.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
@@ -160,7 +160,7 @@ export default function ImportPage() {
             <div>
               <p className="text-sm font-medium">Drop CSV files here or tap to browse</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                EtsySoldOrderItemsYYYY.csv · EtsySoldOrdersYYYY.csv
+                EtsySoldOrderItemsYYYY.csv · EtsySoldOrdersYYYY.csv · EtsyDirectCheckoutPaymentsYYYY.csv
               </p>
             </div>
           </button>

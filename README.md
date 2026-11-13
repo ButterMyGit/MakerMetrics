@@ -64,6 +64,7 @@ DEMO_PASSWORD=demo-account-password
 | `SUPABASE_SERVICE_ROLE_KEY` | For account deletion | Lets **Settings → Delete account** remove the auth user. Server-side only. |
 | `AI_SETTINGS_ENCRYPTION_KEY` | For the AI Analyst | Encrypts saved AI provider keys (AES-256-GCM). 32+ characters. |
 | `NEXT_PUBLIC_DEMO_EMAIL`, `DEMO_PASSWORD` | Optional | The read-only demo account on the login page |
+| `NEXT_PUBLIC_SITE_URL` | Optional | Public URL of the site (e.g. `https://makermetrics.pro`). Used for the Etsy callback URL; defaults to the request's origin. |
 
 ### 3. Deploy to Vercel
 
@@ -88,6 +89,21 @@ Then drag the files onto the **Import** page. Orders and payments files only add
 - **Device cache**: your sales rows are cached in the browser (IndexedDB) so the app opens instantly; the cache is cleared when you sign out or delete your account.
 - **Accent color**: Settings → Appearance changes the chart color and follows your account across devices.
 - **Deleting data**: "Delete all data" removes every imported row; Settings → Delete account removes the account and everything stored for it.
+
+## Connecting Etsy directly (optional)
+
+Settings → Etsy connection pulls orders, payment fees, the payment-account ledger and listings from Etsy's Open API v3, so you don't have to upload CSVs. It is read-only (`transactions_r`, `listings_r`, `shops_r`).
+
+1. In [Etsy → Your Apps](https://www.etsy.com/developers/your-apps), create an app for your own shop and add the callback URL shown in Settings (`https://<your site>/api/etsy/callback`).
+2. Paste the app's keystring and shared secret into Settings and approve access on Etsy.
+3. Press **Sync now**. Later syncs only fetch what changed.
+
+Things to know:
+
+- Etsy's "Seller App" keys work for **your own shop only** and may not be used commercially. Offering this to other sellers as a paid feature needs Etsy's Personal and then Commercial access.
+- Keys and tokens are stored encrypted (AES-256-GCM) and never sent to the browser.
+- Coupon codes are not in the API; they still come from the Sold Order Items CSV. Importing a CSV and syncing can be mixed freely, since rows are matched by transaction ID.
+- Etsy's API has no traffic data (visits, views, search terms, ads).
 
 ## Notes on the data
 

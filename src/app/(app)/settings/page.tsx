@@ -24,6 +24,7 @@ import {
 import { toast } from "sonner";
 import { formatDate, formatNumber } from "@/lib/format";
 import { AiSettingsCard } from "@/components/ai-settings-card";
+import { EtsyConnectionCard } from "@/components/etsy-connection-card";
 import { usePrivacy } from "@/hooks/use-privacy";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, LogOut, Trash2, TriangleAlert, Upload } from "lucide-react";
@@ -140,6 +141,8 @@ export default function SettingsPage() {
             </Button>
           </CardContent>
         </Card>
+
+        <EtsyConnectionCard />
 
         <AiSettingsCard />
 

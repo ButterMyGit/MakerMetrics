@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { isDemoEmail } from "@/lib/demo-account";
+import { clearSalesCache } from "@/lib/data/sales-cache";
 import { useSalesData } from "@/hooks/use-sales-data";
 import { useProfile } from "@/hooks/use-profile";
 import { PageHeader } from "@/components/page-header";
@@ -63,6 +64,7 @@ export default function SettingsPage() {
   async function signOut() {
     const supabase = createClient();
     await supabase.auth.signOut();
+    await clearSalesCache();
     router.push("/login");
     router.refresh();
   }
@@ -169,6 +171,7 @@ function DeleteAccountDialog({ isDemo }: { isDemo: boolean }) {
       // Ensure local session is cleared, then leave.
       const supabase = createClient();
       await supabase.auth.signOut();
+      await clearSalesCache();
       toast.success("Your account and all data were deleted.");
       router.push("/login");
       router.refresh();

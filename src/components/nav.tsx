@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/hooks/use-profile";
+import { clearSalesCache } from "@/lib/data/sales-cache";
 import { useState } from "react";
 
 const NAV_ITEMS = [
@@ -37,6 +38,7 @@ function useSignOut() {
   return async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
+    await clearSalesCache();
     router.push("/login");
     router.refresh();
   };

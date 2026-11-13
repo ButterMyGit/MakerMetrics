@@ -48,8 +48,17 @@ Built with Next.js, Supabase, and Vercel.
 ### 1. Create a Supabase project
 
 1. Create a project at [supabase.com](https://supabase.com) (free tier is plenty).
-2. Apply the project database schema in the Supabase SQL editor or with the Supabase CLI.
+2. Apply the database schema: run each file in [`supabase/migrations/`](supabase/migrations) in order, either pasted into the Supabase SQL editor or with `supabase db push`. The files are idempotent, so re-running them is safe.
 3. Grab your project URL and anon/publishable key from **Project Settings → API**.
+4. Optional: to offer a read-only demo account, create that user in Supabase Auth and flag it (SQL editor):
+
+   ```sql
+   update auth.users
+      set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"is_demo": true}'
+    where email = 'demo@example.com';
+   ```
+
+   Row level security then blocks every write from that account. Set `NEXT_PUBLIC_DEMO_EMAIL` and `DEMO_PASSWORD` so the login page can offer "Try the demo".
 
 ### 2. Run locally
 
@@ -69,6 +78,13 @@ NEXT_PUBLIC_DEMO_EMAIL=demo-account-email
 DEMO_PASSWORD=demo-account-password
 ```
 
+| Variable | Required? | Used for |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Database and sign-in |
+| `SUPABASE_SERVICE_ROLE_KEY` | For account deletion | Lets **Settings → Delete account** remove the auth user. Server-side only. |
+| `AI_SETTINGS_ENCRYPTION_KEY` | For the AI Analyst | Encrypts saved AI provider keys (AES-256-GCM). 32+ characters. |
+| `NEXT_PUBLIC_DEMO_EMAIL`, `DEMO_PASSWORD` | Optional | The read-only demo account on the login page |
+
 ### 3. Deploy to Vercel
 
 Push to GitHub, import the repo at [vercel.com/new](https://vercel.com/new), and set the same environment variables in Vercel.
@@ -81,8 +97,17 @@ In Etsy: **Shop Manager → Settings → Options → Download Data**. Download f
 |---|---|---|
 | Sold Order Items | Yes | One row per item sold — products, variations, quantities |
 | Sold Orders | Recommended | Exact order totals, processing fees, net amounts |
+| Etsy Payments Sales (`EtsyDirectCheckoutPayments*.csv`) | Optional | Refund amounts, attached to the orders they belong to |
 
-Then drag both files onto the **Import** page.
+Then drag the files onto the **Import** page. Orders and payments files only add detail to orders that are already in an order items file, so a refund is never counted as a sale.
+
+## Accounts, privacy and settings
+
+- **Demo account**: the login page can sign visitors into a read-only account. Imports, settings changes and deletion are blocked for it in the database, not only in the UI.
+- **Chat history**: AI Analyst conversations are kept in your browser (localStorage), per account, and never stored on the server.
+- **Device cache**: your sales rows are cached in the browser (IndexedDB) so the app opens instantly; the cache is cleared when you sign out or delete your account.
+- **Accent color**: Settings → Appearance changes the chart color and follows your account across devices.
+- **Deleting data**: "Delete all data" removes every imported row; Settings → Delete account removes the account and everything stored for it.
 
 ## Notes on the data
 
@@ -104,6 +129,7 @@ Then drag both files onto the **Import** page.
 
 ```bash
 npm run dev     # dev server
+npm test        # unit tests (Vitest) for parsing, analytics and forecasting
 npm run lint    # eslint
 npm run build   # production build + typecheck
 ```

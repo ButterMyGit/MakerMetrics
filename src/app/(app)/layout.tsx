@@ -9,11 +9,16 @@ export default async function AppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // The proxy has already refreshed the session; this only verifies the token.
+  const { data } = await supabase.auth.getClaims();
+  const claims = data?.claims;
 
-  if (!user) redirect("/login");
+  if (!claims?.sub) redirect("/login");
+
+  const user = {
+    id: claims.sub,
+    email: typeof claims.email === "string" ? claims.email : null,
+  };
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -32,7 +37,7 @@ export default async function AppLayout({
     <ProfileProvider
       userId={user.id}
       initialShopName={profile?.shop_name ?? null}
-      email={user.email ?? null}
+      email={user.email}
     >
     <AccentProvider userId={user.id} initialAccent={savedAccent}>
       <SalesDataProvider>

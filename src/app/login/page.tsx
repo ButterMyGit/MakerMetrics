@@ -78,8 +78,8 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="relative flex min-h-dvh items-center justify-center p-4 pb-20">
-      <div className="absolute right-4 top-4">
+    <main className="safe-x safe-top relative flex min-h-dvh items-center justify-center pb-20">
+      <div className="absolute right-[max(1rem,var(--safe-right))] top-[max(1rem,var(--safe-top))]">
         <Button variant="outline" size="sm" onClick={() => setAboutOpen(true)}>
           <Info className="size-4" />
           What is this project?

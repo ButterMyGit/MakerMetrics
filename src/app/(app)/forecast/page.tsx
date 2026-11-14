@@ -159,7 +159,7 @@ export default function ForecastPage() {
                     <TableHead>Month</TableHead>
                     <TableHead className="text-right">Orders</TableHead>
                     <TableHead className="text-right">Revenue</TableHead>
-                    <TableHead className="text-right">Likely range</TableHead>
+                    <TableHead className="hidden text-right sm:table-cell">Likely range</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -168,7 +168,7 @@ export default function ForecastPage() {
                     const ord = i === 0 ? forecast.orders.current! : forecast.orders.forecast[i - 1];
                     return (
                       <TableRow key={rev.month}>
-                        <TableCell className="font-medium">
+                        <TableCell className="whitespace-normal font-medium">
                           {formatMonth(rev.month)}
                           {rev.partial && (
                             <span className="block text-xs font-normal text-muted-foreground">
@@ -177,9 +177,17 @@ export default function ForecastPage() {
                             </span>
                           )}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">about {formatNumber(ord.value)}</TableCell>
-                        <TableCell className="text-right tabular-nums">about {formatMoneyApprox(rev.value)}</TableCell>
-                        <TableCell className="text-right tabular-nums text-muted-foreground">
+                        <TableCell className="text-right tabular-nums">
+                          <span className="max-sm:hidden">about </span>
+                          {formatNumber(ord.value)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          about {formatMoneyApprox(rev.value)}
+                          <span className="block text-xs font-normal text-muted-foreground sm:hidden">
+                            {rangeText(rev, true)}
+                          </span>
+                        </TableCell>
+                        <TableCell className="hidden text-right tabular-nums text-muted-foreground sm:table-cell">
                           {rangeText(rev, true)}
                         </TableCell>
                       </TableRow>
@@ -206,14 +214,16 @@ export default function ForecastPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Product</TableHead>
-                    <TableHead className="text-right">Share of sales</TableHead>
+                    <TableHead className="text-right">
+                      Share<span className="max-sm:hidden"> of sales</span>
+                    </TableHead>
                     <TableHead className="text-right">Likely units</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {items.items.map((it) => (
                     <TableRow key={it.key}>
-                      <TableCell className="max-w-[220px] truncate font-medium">{it.name}</TableCell>
+                      <TableCell className="max-w-[30vw] truncate font-medium sm:max-w-[220px]">{it.name}</TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground">
                         {formatPercent(it.share, 0)}
                       </TableCell>

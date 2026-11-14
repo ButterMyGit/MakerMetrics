@@ -21,6 +21,11 @@ export const metadata: Metadata = {
   },
   description:
     "Analytics for Etsy sellers. Import your Etsy CSV exports and get actionable insights, forecasts, and an AI analyst.",
+  appleWebApp: {
+    capable: true,
+    title: "MakerMetrics",
+    statusBarStyle: "black-translucent",
+  },
   icons: {
     icon: "/makermetrics-logo.png",
     apple: "/makermetrics-logo.png",
@@ -30,6 +35,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // draw under the notch and home indicator; pages pad themselves with env(safe-area-inset-*)
+  viewportFit: "cover",
   themeColor: "#0a0a0a",
 };
 
@@ -46,7 +53,11 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <AccentProvider>{children}</AccentProvider>
-        <Toaster position="top-center" richColors />
+        <Toaster
+          position="top-center"
+          richColors
+          mobileOffset={{ top: "calc(env(safe-area-inset-top, 0px) + 12px)" }}
+        />
       </body>
     </html>
   );

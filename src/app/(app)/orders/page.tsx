@@ -525,9 +525,9 @@ function CouponsTab() {
             <TableHeader>
               <TableRow>
                 <TableHead>Code</TableHead>
-                <TableHead>In use</TableHead>
+                <TableHead className="hidden sm:table-cell">In use</TableHead>
                 <TableHead className="text-right">Orders</TableHead>
-                <TableHead className="text-right">Discount given</TableHead>
+                <TableHead className="hidden text-right sm:table-cell">Discount given</TableHead>
                 <TableHead className="text-right">Revenue</TableHead>
                 <TableHead className="text-right">
                   <span className="inline-flex items-center gap-1">
@@ -540,13 +540,13 @@ function CouponsTab() {
               {analysis.coupons.map((c) => (
                 <TableRow key={c.code}>
                   <TableCell className="font-medium">{c.code}</TableCell>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">
+                  <TableCell className="hidden whitespace-nowrap text-muted-foreground sm:table-cell">
                     {c.firstUsed === c.lastUsed
                       ? formatDate(c.firstUsed)
                       : `${formatDate(c.firstUsed)} – ${formatDate(c.lastUsed)}`}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{c.orders}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMoney(c.totalDiscount)}</TableCell>
+                  <TableCell className="hidden text-right tabular-nums sm:table-cell">{formatMoney(c.totalDiscount)}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatMoney(c.revenue)}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     {c.lift == null ? (

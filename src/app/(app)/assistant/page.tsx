@@ -255,7 +255,7 @@ export default function AssistantPage() {
       !lastMessage.parts.some((p) => p.type === "text" && p.text));
 
   return (
-    <div className="flex h-[calc(100dvh-8.5rem)] flex-col lg:h-[calc(100dvh-3rem)]">
+    <div className="fill-screen flex flex-col">
       <PageHeader
         title="AI Analyst"
         description="Ask about your shop. Answers come from the same numbers as the rest of the app."

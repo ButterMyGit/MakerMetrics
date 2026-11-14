@@ -51,8 +51,8 @@ export default async function AppLayout({
       <SalesDataProvider>
         <div className="flex min-h-dvh w-full">
           <DesktopSidebar />
-          <main className="min-w-0 flex-1 pb-20 lg:pb-0">
-            <div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8">
+          <main className="tabbar-space min-w-0 flex-1">
+            <div className="safe-x safe-top mx-auto w-full max-w-[1400px] pb-6">
               <PageTransition>{children}</PageTransition>
             </div>
           </main>

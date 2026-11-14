@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function TermsPage() {
   return (
-    <main className="min-h-dvh bg-background px-4 py-10 text-foreground">
+    <main className="safe-x min-h-dvh bg-background pb-10 pt-[max(2.5rem,calc(var(--safe-top)+1rem))] text-foreground">
       <div className="mx-auto grid max-w-3xl gap-8">
         <div className="space-y-3">
           <Link href="/login" className="text-sm text-muted-foreground hover:text-foreground">

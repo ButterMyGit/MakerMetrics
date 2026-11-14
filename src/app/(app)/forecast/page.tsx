@@ -218,7 +218,7 @@ export default function ForecastPage() {
                         {formatPercent(it.share, 0)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {it.units < 0.5 ? "0–1" : `about ${Math.round(it.units)}`}
+                        {it.units < 1 ? "less than 1" : `about ${Math.round(it.units)}`}
                       </TableCell>
                     </TableRow>
                   ))}

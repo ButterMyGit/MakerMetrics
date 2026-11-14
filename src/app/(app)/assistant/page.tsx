@@ -335,11 +335,20 @@ export default function AssistantPage() {
                     ) : (
                       <div className="grid min-w-0 max-w-full gap-2">
                         <div className="flex flex-wrap gap-1.5 empty:hidden">
-                          {message.parts.map((part, i) =>
-                            part.type.startsWith("tool-") ? (
-                              <ToolChip key={i} part={part as { type: string; state?: string; errorText?: string }} />
-                            ) : null
-                          )}
+                          {message.parts.map((part, i) => {
+                            if (!part.type.startsWith("tool-")) return null;
+                            const chip = part as { type: string; state?: string; errorText?: string };
+                            // A call the model retried successfully isn't worth flagging.
+                            const recovered =
+                              chip.state === "output-error" &&
+                              message.parts.some(
+                                (other, j) =>
+                                  j > i &&
+                                  other.type === part.type &&
+                                  (other as { state?: string }).state === "output-available"
+                              );
+                            return recovered ? null : <ToolChip key={i} part={chip} />;
+                          })}
                         </div>
                         {message.parts.map((part, i) =>
                           part.type === "text" && part.text ? <Markdown key={i} text={part.text} /> : null

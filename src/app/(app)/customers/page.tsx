@@ -22,7 +22,7 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { PanelHeader, SidePanel } from "@/components/side-panel";
 import {
   Table,
   TableBody,
@@ -35,81 +35,75 @@ import { downloadCsv } from "@/lib/export";
 import { formatDate, formatMoney, formatNumber, formatPercent } from "@/lib/format";
 
 const TIER_STYLE: Record<BuyerTier, string> = {
-  VIP: "bg-primary text-primary-foreground",
   Returning: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
   New: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
   "One-time": "bg-muted text-muted-foreground",
 };
 
-const TIER_HELP = "VIP: 3+ orders · Returning: 2 orders · New: first order in the last 30 days · One-time: a single order, longer ago";
+const TIER_HELP = "Returning: 2 or more orders · New: first order in the last 30 days · One-time: a single order, longer ago";
 
-function BuyerDrawer({ buyer, onClose }: { buyer: BuyerStat | null; onClose: () => void }) {
+function BuyerDetailPanel({ buyer, onClose }: { buyer: BuyerStat; onClose: () => void }) {
   const { allOrders } = useSalesData();
   const privacy = usePrivacy();
   const history = useMemo(
-    () => (buyer ? allOrders.filter((o) => o.buyerKey === buyer.key).reverse() : []),
+    () => allOrders.filter((o) => o.buyerKey === buyer.key).reverse(),
     [allOrders, buyer]
   );
 
   return (
-    <Sheet open={buyer !== null} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
-        {buyer && (
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
+      <PanelHeader
+        title={privacy.name(buyer.name)}
+        subtitle={
           <>
-            <SheetHeader>
-              <SheetTitle>{privacy.name(buyer.name)}</SheetTitle>
-              <SheetDescription>
-                {privacy.location(buyer.location) ?? "Location unknown"} · customer since{" "}
-                {formatDate(buyer.firstOrder)}
-              </SheetDescription>
-            </SheetHeader>
-            <div className="grid gap-4 px-4 pb-8">
-              <div className="flex items-center gap-2">
-                <Badge className={TIER_STYLE[buyer.tier]}>{buyer.tier}</Badge>
-                {buyer.usedCoupon && <Badge variant="secondary">Uses coupons</Badge>}
-              </div>
-              <dl className="grid grid-cols-3 gap-3 text-sm">
-                <div>
-                  <dt className="text-xs text-muted-foreground">Orders</dt>
-                  <dd className="font-semibold tabular-nums">{buyer.orders}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-muted-foreground">Revenue</dt>
-                  <dd className="font-semibold tabular-nums">{formatMoney(buyer.revenue)}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-muted-foreground">Avg order</dt>
-                  <dd className="font-semibold tabular-nums">{formatMoney(buyer.avgOrderValue)}</dd>
-                </div>
-              </dl>
-              <div>
-                <h3 className="mb-2 text-sm font-medium">Order history</h3>
-                <ul className="grid gap-2">
-                  {history.map((o) => (
-                    <li key={o.key}>
-                      <Link
-                        href={`/orders?order=${encodeURIComponent(o.key)}`}
-                        className="block rounded-lg border p-3 transition-colors hover:bg-accent/50"
-                      >
-                        <div className="flex justify-between gap-3 text-sm">
-                          <span className="font-medium">{formatDate(o.saleDate)}</span>
-                          <span className="tabular-nums">{formatMoney(o.money.revenue)}</span>
-                        </div>
-                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                          {o.itemsLabel}
-                          {o.coupons.length > 0 ? ` · ${o.coupons.join(", ")}` : ""}
-                          {o.money.refund > 0 ? " · refunded" : ""}
-                        </p>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
+            {privacy.location(buyer.location) ?? "Location unknown"} · customer since{" "}
+            {formatDate(buyer.firstOrder)}
           </>
-        )}
-      </SheetContent>
-    </Sheet>
+        }
+        onClose={onClose}
+      />
+      <div className="flex items-center gap-2">
+        <Badge className={TIER_STYLE[buyer.tier]}>{buyer.tier}</Badge>
+        {buyer.usedCoupon && <Badge variant="secondary">Uses coupons</Badge>}
+      </div>
+      <dl className="grid grid-cols-3 gap-3 text-sm">
+        <div>
+          <dt className="text-xs text-muted-foreground">Orders</dt>
+          <dd className="font-semibold tabular-nums">{buyer.orders}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted-foreground">Revenue</dt>
+          <dd className="font-semibold tabular-nums">{formatMoney(buyer.revenue)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted-foreground">Avg order</dt>
+          <dd className="font-semibold tabular-nums">{formatMoney(buyer.avgOrderValue)}</dd>
+        </div>
+      </dl>
+      <div>
+        <h3 className="mb-2 text-sm font-medium">Order history</h3>
+        <ul className="grid grid-cols-[minmax(0,1fr)] gap-2">
+          {history.map((o) => (
+            <li key={o.key}>
+              <Link
+                href={`/orders?order=${encodeURIComponent(o.key)}`}
+                className="block rounded-lg border p-3 transition-colors hover:bg-accent/50"
+              >
+                <div className="flex justify-between gap-3 text-sm">
+                  <span className="font-medium">{formatDate(o.saleDate)}</span>
+                  <span className="tabular-nums">{formatMoney(o.money.revenue)}</span>
+                </div>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {o.itemsLabel}
+                  {o.coupons.length > 0 ? ` · ${o.coupons.join(", ")}` : ""}
+                  {o.money.refund > 0 ? " · refunded" : ""}
+                </p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
   );
 }
 
@@ -127,7 +121,7 @@ export default function CustomersPage() {
   const geo = useMemo(() => geoBreakdown(orders, geoMode), [orders, geoMode]);
 
   const listed = useMemo(
-    () => (buyerFilter === "repeat" ? buyers.filter((b) => b.tier === "VIP" || b.tier === "Returning") : buyers),
+    () => (buyerFilter === "repeat" ? buyers.filter((b) => b.tier === "Returning") : buyers),
     [buyers, buyerFilter]
   );
   const selected = useMemo(() => {
@@ -151,8 +145,9 @@ export default function CustomersPage() {
       {orders.length === 0 ? (
         <EmptyRange />
       ) : (
-        <div className="grid gap-4">
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="flex items-start gap-4">
+        <div className="grid min-w-0 flex-1 gap-4">
+          <div className="stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
             <KpiCard label="Buyers" value={formatNumber(kpis.uniqueBuyers)} />
             <KpiCard
               label="Repeat buyers"
@@ -266,7 +261,7 @@ export default function CustomersPage() {
                 </TableHeader>
                 <TableBody>
                   {visible.map((b) => (
-                    <TableRow key={b.key} className="cursor-pointer" onClick={() => setSelectedKey(b.key)}>
+                    <TableRow key={b.key} data-state={selected?.key === b.key ? "selected" : undefined} className="cursor-pointer" onClick={() => setSelectedKey((k) => (k === b.key ? null : b.key))}>
                       <TableCell className="max-w-[160px] truncate font-medium sm:max-w-none">
                         {privacy.name(b.name)}
                       </TableCell>
@@ -302,9 +297,12 @@ export default function CustomersPage() {
             </div>
           </Card>
         </div>
+        <SidePanel open={selected !== null} onClose={() => setSelectedKey(null)} title="Buyer details">
+          {selected && <BuyerDetailPanel buyer={selected} onClose={() => setSelectedKey(null)} />}
+        </SidePanel>
+        </div>
       )}
 
-      <BuyerDrawer buyer={selected} onClose={() => setSelectedKey(null)} />
     </div>
   );
 }

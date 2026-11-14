@@ -5,7 +5,7 @@ import { ArrowDown, ArrowUp, Download, Search } from "lucide-react";
 import { useSalesData } from "@/hooks/use-sales-data";
 import { useProfile } from "@/hooks/use-profile";
 import { usePrivacy } from "@/hooks/use-privacy";
-import { initialParam, useMediaQuery } from "@/hooks/use-media-query";
+import { initialParam } from "@/hooks/use-media-query";
 import {
   computeKpis,
   couponAnalysis,
@@ -23,7 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { SidePanel, useWidePanel } from "@/components/side-panel";
 import {
   Select,
   SelectContent,
@@ -120,7 +120,7 @@ function SortHead({
 function OrdersTab() {
   const { orders, allOrders } = useSalesData();
   const privacy = usePrivacy();
-  const wide = useMediaQuery("(min-width: 1280px)");
+  const wide = useWidePanel();
   const [query, setQuery] = useState(() => initialParam("q") ?? "");
   const [filter, setFilter] = useState<Filter>(() => {
     const f = initialParam("filter");
@@ -288,7 +288,7 @@ function OrdersTab() {
                   {visible.map((o) => (
                     <TableRow
                       key={o.key}
-                      onClick={() => setSelectedKey(o.key)}
+                      onClick={() => setSelectedKey((k) => (k === o.key ? null : o.key))}
                       data-state={selected?.key === o.key ? "selected" : undefined}
                       className="cursor-pointer"
                     >
@@ -327,7 +327,7 @@ function OrdersTab() {
               {visible.map((o) => (
                 <button
                   key={o.key}
-                  onClick={() => setSelectedKey(o.key)}
+                  onClick={() => setSelectedKey((k) => (k === o.key ? null : o.key))}
                   className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50"
                 >
                   <div className="min-w-0">
@@ -364,23 +364,9 @@ function OrdersTab() {
         )}
       </div>
 
-      {/* Wide screens: the order sits beside the list, which stays usable. */}
-      {wide && selected && (
-        <Card className="sticky top-6 max-h-[calc(100dvh-3rem)] w-[380px] shrink-0 overflow-y-auto p-4">
-          {detail}
-        </Card>
-      )}
-      {!wide && (
-        <Sheet open={selected !== null} onOpenChange={(open) => !open && setSelectedKey(null)}>
-          <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
-            <SheetHeader className="sr-only">
-              <SheetTitle>Order details</SheetTitle>
-              <SheetDescription>Line items, fees and shipping for the selected order.</SheetDescription>
-            </SheetHeader>
-            <div className="px-4 pb-8 pt-10">{detail}</div>
-          </SheetContent>
-        </Sheet>
-      )}
+      <SidePanel open={selected !== null} onClose={() => setSelectedKey(null)} title="Order details">
+        {detail}
+      </SidePanel>
     </div>
   );
 }
@@ -431,7 +417,7 @@ function FulfillmentTab() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiCard
           label="Shipped on time"
           metric="onTimeRate"
@@ -502,7 +488,7 @@ function CouponsTab() {
 
   return (
     <div className="grid gap-4">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiCard
           label="Orders using a coupon"
           value={formatPercent(analysis.couponOrderShare, 0)}

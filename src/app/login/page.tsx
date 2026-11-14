@@ -86,7 +86,7 @@ export default function LoginPage() {
         </Button>
       </div>
 
-      <div className="w-full max-w-sm space-y-6">
+      <div className="page-enter w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center gap-2 text-center">
           <div className="flex size-12 items-center justify-center overflow-hidden rounded-xl bg-background ring-1 ring-border">
             <Image

@@ -24,8 +24,8 @@ import { buildInsights } from "@/lib/analytics/insights";
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 const dateRangeInput = {
-  start: isoDate.optional().describe("Start date (YYYY-MM-DD), inclusive. Omit for all history."),
-  end: isoDate.optional().describe("End date (YYYY-MM-DD), inclusive. Omit for up to the latest data."),
+  start: isoDate.nullish().describe("Start date (YYYY-MM-DD), inclusive. Omit for all history."),
+  end: isoDate.nullish().describe("End date (YYYY-MM-DD), inclusive. Omit for up to the latest data."),
 };
 
 function r2(n: number | null | undefined): number | null {
@@ -50,7 +50,7 @@ export interface AnalystContext {
  */
 export function buildAnalystTools(ctx: AnalystContext) {
   const { orders, through } = ctx;
-  const inRange = (start?: string, end?: string) => filterOrders(orders, start ?? null, end ?? null);
+  const inRange = (start?: string | null, end?: string | null) => filterOrders(orders, start ?? null, end ?? null);
 
   // Stable pseudonyms, numbered by first order, unless the user opted in to names.
   const aliases = new Map<string, string>();
@@ -128,9 +128,9 @@ export function buildAnalystTools(ctx: AnalystContext) {
         "Per-product stats: units, orders, item sales, average price, first/last sold, units in the last 90 days vs the 90 days before, and a trend label (rising / falling / new / dormant, or null when volume is too low to call). Use `search` to filter by product name, e.g. every product whose title contains a word.",
       inputSchema: z.object({
         ...dateRangeInput,
-        search: z.string().optional().describe("Only products whose name or listing title contains this text"),
+        search: z.string().nullish().describe("Only products whose name or listing title contains this text"),
         sort: z.enum(["units", "itemRevenue", "recentChange", "lastSold"]).default("units"),
-        limit: z.number().int().min(1).max(100).default(20),
+        limit: z.number().int().min(1).max(500).default(20),
       }),
       execute: async ({ start, end, search, sort, limit }) => {
         let list = productStats(inRange(start, end), through, orders);
@@ -190,7 +190,7 @@ export function buildAnalystTools(ctx: AnalystContext) {
 
     get_customer_insights: tool({
       description:
-        "Buyer analytics: unique buyers, share who ordered more than once, revenue per buyer, typical days between repeat orders, new vs returning buyers by month, and the top buyers by revenue with their tier (VIP 3+ orders, Returning 2, New = first order in the last 30 days, One-time).",
+        "Buyer analytics: unique buyers, share who ordered more than once, revenue per buyer, typical days between repeat orders, new vs returning buyers by month, and the top buyers by revenue with their tier (Returning = 2+ orders, New = first order in the last 30 days, One-time).",
       inputSchema: z.object({
         ...dateRangeInput,
         topBuyers: z.number().int().min(0).max(30).default(10),
@@ -333,7 +333,7 @@ export function buildAnalystTools(ctx: AnalystContext) {
         months: z.number().int().min(1).max(12).default(3),
         orderChangePercent: z.number().min(-100).max(1000).default(0).describe("Change in monthly orders vs the forecast, e.g. 20 for +20%"),
         aovChangePercent: z.number().min(-100).max(1000).default(0).describe("Change in average order value, e.g. -10 for a 10% discount"),
-        targetRevenue: z.number().positive().optional().describe("Monthly revenue goal"),
+        targetRevenue: z.number().positive().nullish().describe("Monthly revenue goal"),
       }),
       execute: async ({ months, orderChangePercent, aovChangePercent, targetRevenue }) => {
         const f = shopForecast(orders, { through, horizon: months });
@@ -383,9 +383,9 @@ export function buildAnalystTools(ctx: AnalystContext) {
       description:
         "Find individual orders. `query` matches buyer, item title, option, SKU, coupon code, order number or location. Filters can be combined. Returns the most recent matches first, plus how many matched in total.",
       inputSchema: z.object({
-        query: z.string().optional(),
+        query: z.string().nullish(),
         ...dateRangeInput,
-        coupon: z.string().optional().describe("Only orders that used this coupon code"),
+        coupon: z.string().nullish().describe("Only orders that used this coupon code"),
         refundedOnly: z.boolean().default(false),
         unshippedOnly: z.boolean().default(false),
         limit: z.number().int().min(1).max(50).default(15),

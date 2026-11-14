@@ -10,6 +10,7 @@ import {
   Sparkles,
   TrendingUp,
   EyeOff,
+  CircleHelp,
   Eye,
   Search,
   Users,
@@ -24,6 +25,7 @@ import { useProfile } from "@/hooks/use-profile";
 import { clearSalesCache } from "@/lib/data/sales-cache";
 import { useState } from "react";
 import { usePrivacy } from "@/hooks/use-privacy";
+import { HelpDialog } from "@/components/help-dialog";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -115,6 +117,12 @@ export function DesktopSidebar() {
           Privacy mode
           <span className="ml-auto text-xs font-normal">{privacy.enabled ? "On" : "Off"}</span>
         </button>
+        <HelpDialog>
+          <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground">
+            <CircleHelp className="size-4" />
+            Help
+          </button>
+        </HelpDialog>
         <button
           onClick={signOut}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
@@ -179,6 +187,12 @@ export function MobileTabBar() {
                 {item.label}
               </Link>
             ))}
+            <HelpDialog>
+              <button className="flex items-center gap-3 rounded-lg px-3 py-3 text-left text-sm font-medium hover:bg-accent">
+                <CircleHelp className="size-4.5" />
+                Help
+              </button>
+            </HelpDialog>
             <button
               onClick={() => {
                 setMoreOpen(false);

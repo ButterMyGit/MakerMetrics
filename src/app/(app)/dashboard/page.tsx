@@ -111,7 +111,7 @@ export default function DashboardPage() {
     <div>
       <PageHeader title="Dashboard" description={description} />
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+      <div className="stagger grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
         <KpiCard
           label="Revenue"
           metric="revenue"
@@ -196,7 +196,7 @@ export default function DashboardPage() {
                 orders behind them to mean something.
               </p>
             ) : (
-              <ul className="divide-y">
+              <ul className="stagger divide-y">
                 {insights.slice(0, 5).map((insight) => (
                   <InsightRow key={insight.id} insight={insight} />
                 ))}

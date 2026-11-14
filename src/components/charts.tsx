@@ -61,7 +61,7 @@ export function BarList({
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-muted">
             <div
-              className="h-full rounded-full bg-[var(--chart-1)]"
+              className="grow-x h-full rounded-full bg-[var(--chart-1)]"
               style={{ width: `${(d.value / max) * 100}%` }}
             />
           </div>

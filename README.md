@@ -21,6 +21,7 @@ Built with Next.js, Supabase, and Vercel.
 - **Outlook**: a forecast for the month in progress and the next three. Several simple models are back-tested on your own history and the most accurate one is used; if "same as last month" wins, that is what you get. Seasonal patterns are only used with two full years of data. Revenue is derived from forecast orders, ranges come from how wrong the back-test was, and the measured accuracy is shown above the chart.
 - **AI Analyst**: bring your own API key (Anthropic, OpenAI or Google). The model list is loaded from the provider with your key, and the analyst answers by calling the same calculations as the pages. Buyer names are replaced with labels such as "Buyer 12" unless you choose to share them.
 - **CSV import**: drop `EtsySoldOrderItems*.csv`, `EtsySoldOrders*.csv` and optionally `EtsyDirectCheckoutPayments*.csv`. Files are parsed in the browser, merged on Order ID and matched by Transaction ID, so re-importing is always safe.
+- **Phones**: every page is laid out for small screens, with a floating tab bar that tucks away as you scroll. It can be added to the home screen, or built as an Android app (see [Phones and the Android app](#phones-and-the-android-app)).
 - **Everywhere**: date range presets and custom ranges (kept in the URL), an "i" on each metric explaining its formula, privacy mode for screenshots, and search with Ctrl/Cmd+K.
 
 ## If you want to self-host the project
@@ -62,13 +63,15 @@ DEMO_PASSWORD=demo-account-password
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Database and sign-in |
 | `SUPABASE_SERVICE_ROLE_KEY` | For account deletion | Lets **Settings → Delete account** remove the auth user. Server-side only. |
-| `AI_SETTINGS_ENCRYPTION_KEY` | For the AI Analyst | Encrypts saved AI provider keys (AES-256-GCM). 32+ characters. |
+| `AI_SETTINGS_ENCRYPTION_KEY` | For the AI Analyst and the Etsy connection | Encrypts saved AI provider keys and Etsy keys/tokens (AES-256-GCM). 32+ characters. Changing it makes saved keys unreadable, so they have to be entered again. |
 | `NEXT_PUBLIC_DEMO_EMAIL`, `DEMO_PASSWORD` | Optional | The read-only demo account on the login page |
 | `NEXT_PUBLIC_SITE_URL` | Optional | Public URL of the site (e.g. `https://makermetrics.pro`). Used for the Etsy callback URL; defaults to the request's origin. |
 
 ### 3. Deploy to Vercel
 
-Push to GitHub, import the repo at [vercel.com/new](https://vercel.com/new), and set the same environment variables in Vercel.
+Push to GitHub, import the repo at [vercel.com/new](https://vercel.com/new), and set the same environment variables in Vercel. Tick **Preview** as well as Production for them if you want preview deployments to work.
+
+In Supabase, under **Authentication → URL Configuration**, set the Site URL to your domain and add `https://<your site>/auth/callback` to the redirect URLs. Email confirmations (sign-up and changing the sign-in email) return there.
 
 ### 4. Import your data
 
@@ -87,7 +90,8 @@ Then drag the files onto the **Import** page. Orders and payments files only add
 - **Demo account**: the login page can sign visitors into a read-only account. Imports, settings changes and deletion are blocked for it in the database, not only in the UI.
 - **Chat history**: AI Analyst conversations are kept in your browser (localStorage), per account, and never stored on the server.
 - **Device cache**: your sales rows are cached in the browser (IndexedDB) so the app opens instantly; the cache is cleared when you sign out or delete your account.
-- **Accent color**: Settings → Appearance changes the chart color and follows your account across devices.
+- **Sign-in details**: Settings → Sign-in changes the email (confirmed from a link sent to the new address) and the password (the current one is asked for first).
+- **Accent color**: Settings → Display changes the chart color and follows your account across devices.
 - **Deleting data**: "Delete all data" removes every imported row; Settings → Delete account removes the account and everything stored for it.
 
 ## Connecting Etsy directly (optional)
@@ -104,6 +108,14 @@ Things to know:
 - Keys and tokens are stored encrypted (AES-256-GCM) and never sent to the browser.
 - Coupon codes are not in the API; they still come from the Sold Order Items CSV. Importing a CSV and syncing can be mixed freely, since rows are matched by transaction ID.
 - Etsy's API has no traffic data (visits, views, search terms, ads).
+
+## Phones and the Android app
+
+- **Layout**: below 1024px the sidebar is replaced by a floating tab bar that hides while you scroll down or type. Pages draw edge to edge and pad themselves with the device's safe areas (`env(safe-area-inset-*)`, set up in `src/app/globals.css`), so nothing sits under a notch or the home indicator. Controls grow to finger size on touch screens.
+- **Home screen**: `src/app/manifest.ts` makes the site installable. In the phone's browser choose "Add to Home Screen" and it opens full screen.
+- **Android APK**: [`mobile/`](mobile) is a small [Capacitor](https://capacitorjs.com) wrapper that opens the live site in a full-screen app. GitHub builds it: **Actions → Android APK → Run workflow**, then download `MakerMetrics-apk` from the finished run. Things to know:
+  - The app shows the site set in `mobile/capacitor.config.json` (`server.url`); the workflow's `site_url` field overrides it for one build. It needs a connection and updates whenever the site does, with no reinstall.
+  - It is a debug build signed with a throwaway key, meant for installing directly on your own phone ("install unknown apps"). Each build has a different signature, so uninstall the old one before installing a new one. A Play Store release needs your own signing key and a release build.
 
 ## Notes on the data
 
@@ -132,6 +144,19 @@ npm test        # unit tests (Vitest) for parsing, analytics and forecasting
 npm run lint    # eslint
 npm run build   # production build + typecheck
 ```
+
+Where things live:
+
+| Path | What |
+|---|---|
+| `src/app/(app)/` | The signed-in pages (dashboard, orders, products, customers, forecast, assistant, settings, import) |
+| `src/app/api/` | Server routes: AI chat and settings, Etsy connection/OAuth/sync |
+| `src/lib/analytics/` | Money model, product and buyer stats, forecast, insights, metric definitions |
+| `src/lib/etsy/` | CSV parsing and the Etsy API client, mapping and sync |
+| `src/lib/ai/` | Analyst tools, prompt and model listing |
+| `src/components/nav.tsx` | Desktop sidebar and the phone tab bar |
+| `supabase/migrations/` | Database schema, in order |
+| `mobile/`, `.github/workflows/android-apk.yml` | Android wrapper and its build |
 
 Analytics and forecasting logic is framework-free TypeScript in `src/lib/analytics/`, shared by the UI and the AI assistant's tools.
 

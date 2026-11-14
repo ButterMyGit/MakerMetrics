@@ -129,7 +129,7 @@ export function EtsyConnectionCard() {
           it never changes anything on Etsy.
         </CardDescription>
       </CardHeader>
-      <CardContent className="grid max-w-xl gap-4">
+      <CardContent className="grid max-w-xl grid-cols-[minmax(0,1fr)] gap-4">
         {status?.unavailable ? (
           <p className="text-sm text-muted-foreground">
             The Etsy connection isn&apos;t available on this installation yet (the database
@@ -181,7 +181,7 @@ export function EtsyConnectionCard() {
                 , create an app for your own shop (Seller App access) and add this callback URL to
                 it, exactly:
                 <span className="mt-1.5 flex items-center gap-2">
-                  <code className="min-w-0 flex-1 truncate rounded bg-muted px-2 py-1 text-xs text-foreground">
+                  <code className="min-w-0 flex-1 break-all rounded bg-muted px-2 py-1.5 text-xs text-foreground">
                     {status.callbackUrl}
                   </code>
                   <Button
@@ -201,7 +201,7 @@ export function EtsyConnectionCard() {
               <li>Paste the app&apos;s keystring and shared secret below.</li>
               <li>Approve read access on Etsy when it asks.</li>
             </ol>
-            <form onSubmit={saveKey} className="grid gap-3">
+            <form onSubmit={saveKey} className="grid grid-cols-[minmax(0,1fr)] gap-3">
               <div className="grid gap-1.5">
                 <Label htmlFor="etsy-keystring">Keystring</Label>
                 <Input

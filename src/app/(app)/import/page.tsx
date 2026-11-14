@@ -122,7 +122,7 @@ export default function ImportPage() {
             re-importing is always safe, because rows are matched by transaction.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4">
+        <CardContent className="grid grid-cols-[minmax(0,1fr)] gap-4">
           <button
             type="button"
             disabled={isDemo}

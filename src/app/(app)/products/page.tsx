@@ -173,17 +173,19 @@ function SortHead({
   k,
   label,
   right,
+  className,
   sort,
   onSort,
 }: {
   k: SortKey;
   label: React.ReactNode;
   right?: boolean;
+  className?: string;
   sort: { key: SortKey; dir: 1 | -1 };
   onSort: (key: SortKey) => void;
 }) {
   return (
-    <TableHead className={cn(right && "text-right")}>
+    <TableHead className={cn(right && "text-right", className)}>
       <button
         type="button"
         onClick={() => onSort(k)}
@@ -294,8 +296,8 @@ export default function ProductsPage() {
                         sort={sort}
                         onSort={onSort}
                       />
-                      <SortHead k="avgPrice" label="Avg price" right sort={sort} onSort={onSort} />
-                      <SortHead k="lastSold" label="Last sold" sort={sort} onSort={onSort} />
+                      <SortHead k="avgPrice" label="Avg price" right className="hidden md:table-cell" sort={sort} onSort={onSort} />
+                      <SortHead k="lastSold" label="Last sold" className="hidden md:table-cell" sort={sort} onSort={onSort} />
                       <SortHead
                         k="change"
                         label={
@@ -303,6 +305,7 @@ export default function ProductsPage() {
                             90-day change
                           </span>
                         }
+                        className="hidden md:table-cell"
                         sort={sort}
                         onSort={onSort}
                       />
@@ -311,7 +314,7 @@ export default function ProductsPage() {
                   <TableBody>
                     {visible.map((p) => (
                       <TableRow key={p.key} data-state={selected?.key === p.key ? "selected" : undefined} className="cursor-pointer" onClick={() => setSelectedKey((k) => (k === p.key ? null : p.key))}>
-                        <TableCell className="max-w-[220px] truncate font-medium lg:max-w-md">{p.name}</TableCell>
+                        <TableCell className="max-w-[40vw] truncate font-medium sm:max-w-[220px] lg:max-w-md">{p.name}</TableCell>
                         <TableCell className="hidden sm:table-cell">
                           <Sparkline values={p.spark} />
                         </TableCell>
@@ -327,11 +330,11 @@ export default function ProductsPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{formatMoney(p.itemRevenue)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatMoney(p.avgPrice)}</TableCell>
-                        <TableCell className="whitespace-nowrap text-muted-foreground">
+                        <TableCell className="hidden text-right tabular-nums md:table-cell">{formatMoney(p.avgPrice)}</TableCell>
+                        <TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">
                           {formatDate(p.lastSold)}
                         </TableCell>
-                        <TableCell className="whitespace-nowrap">
+                        <TableCell className="hidden whitespace-nowrap md:table-cell">
                           <span className="mr-2 tabular-nums text-muted-foreground">
                             {p.priorUnits} → {p.recentUnits}
                           </span>

@@ -15,7 +15,7 @@ export function InfoTip({ metric, text }: { metric?: MetricId; text?: string }) 
         <button
           type="button"
           aria-label={`How ${label} is calculated`}
-          className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          className="relative inline-flex size-4 shrink-0 after:absolute after:-inset-3 after:content-[''] items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
         >
           <Info className="size-3.5" />
         </button>

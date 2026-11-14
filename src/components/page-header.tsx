@@ -31,7 +31,7 @@ export function DataFreshness() {
       href="/import"
       title="Latest sale or shipment in your data. Click to upload a newer export."
       className={cn(
-        "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors hover:bg-accent",
+        "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 pointer-coarse:h-10 text-xs font-medium transition-colors hover:bg-accent",
         age >= 14
           ? "border-amber-500/40 text-amber-700 dark:text-amber-400"
           : "text-muted-foreground"

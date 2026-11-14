@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 interface Status {
   connection: EtsyConnectionInfo;
   callbackUrl: string;
+  preview?: boolean;
   unavailable?: string;
 }
 
@@ -198,6 +199,13 @@ export function EtsyConnectionCard() {
                   </Button>
                 </span>
               </li>
+              {status.preview && (
+                <li className="list-none rounded-md border border-amber-500/40 p-2 text-amber-700 dark:text-amber-400">
+                  This is a preview copy of the site, so its callback URL is different from the
+                  live site&apos;s. Etsy will refuse the connection unless the URL above is also
+                  on your Etsy app, or you connect from the live site instead.
+                </li>
+              )}
               <li>Paste the app&apos;s keystring and shared secret below.</li>
               <li>Approve read access on Etsy when it asks.</li>
             </ol>

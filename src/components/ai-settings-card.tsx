@@ -109,7 +109,7 @@ export function AiSettingsCard() {
             : "Bring your own API key. It is encrypted before it is saved, used only to answer your questions, and you pay the provider directly for what you use."}
         </CardDescription>
       </CardHeader>
-      <CardContent className="grid max-w-md gap-4">
+      <CardContent className="grid max-w-md grid-cols-[minmax(0,1fr)] gap-4">
         <div className="grid gap-2">
           <Label>Provider</Label>
           <Select

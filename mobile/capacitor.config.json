@@ -1,0 +1,14 @@
+{
+  "appId": "pro.makermetrics.app",
+  "appName": "MakerMetrics",
+  "webDir": "www",
+  "backgroundColor": "#0a0a0a",
+  "server": {
+    "url": "https://www.makermetrics.pro",
+    "androidScheme": "https",
+    "allowNavigation": ["www.makermetrics.pro", "makermetrics.pro", "www.etsy.com", "etsy.com"]
+  },
+  "android": {
+    "adjustMarginsForEdgeToEdge": "auto"
+  }
+}

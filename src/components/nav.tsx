@@ -198,11 +198,6 @@ export function MobileTabBar() {
 
   return (
     <>
-      {/* keeps page content from showing through the status bar on full-screen phones */}
-      <div
-        aria-hidden
-        className="pointer-events-none fixed inset-x-0 top-0 z-30 h-[var(--safe-top)] bg-background/85 backdrop-blur lg:hidden"
-      />
       <nav
         aria-label="Main"
         className={cn(

@@ -1,0 +1,74 @@
+name: Android APK
+
+# Builds an installable Android app that opens the MakerMetrics site full screen.
+# Run it from the Actions tab ("Run workflow"); the APK is attached to the run.
+on:
+  workflow_dispatch:
+    inputs:
+      site_url:
+        description: "Site the app opens (leave blank for the one in mobile/capacitor.config.json)"
+        required: false
+        default: ""
+  push:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/android-apk.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install Capacitor
+        run: npm install --no-audit --no-fund
+
+      - name: Point the app at a different site
+        if: ${{ inputs.site_url != '' }}
+        env:
+          SITE_URL: ${{ inputs.site_url }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const url = new URL(process.env.SITE_URL);
+            const config = JSON.parse(fs.readFileSync("capacitor.config.json", "utf8"));
+            config.server.url = url.origin;
+            config.server.allowNavigation = [url.hostname, "www.etsy.com", "etsy.com"];
+            fs.writeFileSync("capacitor.config.json", JSON.stringify(config, null, 2));
+          '
+
+      - name: Create the Android project
+        run: npx cap add android
+
+      - name: App icon and splash screen
+        continue-on-error: true
+        run: npx capacitor-assets generate --android --iconBackgroundColor '#0a0a0a' --iconBackgroundColorDark '#0a0a0a' --splashBackgroundColor '#0a0a0a' --splashBackgroundColorDark '#0a0a0a'
+
+      - name: Build the APK
+        working-directory: mobile/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Rename
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk MakerMetrics.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MakerMetrics-apk
+          path: mobile/MakerMetrics.apk
+          if-no-files-found: error

@@ -1,5 +1,6 @@
 "use client";
 
+import { useMediaQuery } from "@/hooks/use-media-query";
 import {
   Area,
   Bar,
@@ -29,6 +30,14 @@ export const CHART_COLORS = [
   "var(--chart-4)",
   "var(--chart-2)",
 ];
+
+/**
+ * On touch screens a tooltip opens on a tap, not while a finger passes over
+ * the chart on its way down the page.
+ */
+function useTooltipTrigger(): "hover" | "click" {
+  return useMediaQuery("(pointer: coarse)") ? "click" : "hover";
+}
 
 function axisValue(v: number, money: boolean): string {
   if (money) return formatMoneyAxis(v);
@@ -159,6 +168,7 @@ export function MonthlyTrendChart({
   money?: boolean;
   height?: number;
 }) {
+  const tooltipTrigger = useTooltipTrigger();
   const rows = data.map((d) => {
     const value = Number((d as unknown as Record<string, unknown>)[dataKey] ?? 0);
     const rest = d.partial && d.expected != null ? Math.max(0, d.expected - value) : 0;
@@ -207,6 +217,7 @@ export function MonthlyTrendChart({
             width={48}
           />
           <Tooltip
+            trigger={tooltipTrigger}
             content={
               <ChartTooltip
                 money={money}
@@ -248,6 +259,7 @@ export function DonutChart({
   data: { name: string; value: number }[];
   height?: number;
 }) {
+  const tooltipTrigger = useTooltipTrigger();
   const top = data.slice(0, 5);
   const restTotal = data.slice(5).reduce((s, d) => s + d.value, 0);
   const display = restTotal > 0 ? [...top, { name: "Other", value: restTotal }] : top;
@@ -270,7 +282,7 @@ export function DonutChart({
               <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
             ))}
           </Pie>
-          <Tooltip content={<ChartTooltip />} />
+          <Tooltip trigger={tooltipTrigger} content={<ChartTooltip />} />
         </PieChart>
       </ResponsiveContainer>
       <ul className="grid w-full gap-1.5 text-sm">
@@ -311,6 +323,7 @@ export function ForecastChart({
   money?: boolean;
   height?: number;
 }) {
+  const tooltipTrigger = useTooltipTrigger();
   const ticks = yTicks(maxOf(data, ["actual", "forecast", "band"]), money);
   return (
     <div>
@@ -346,7 +359,7 @@ export function ForecastChart({
             axisLine={false}
             width={48}
           />
-          <Tooltip content={<ChartTooltip money={money} labelFormatter={formatMonth} />} />
+          <Tooltip trigger={tooltipTrigger} content={<ChartTooltip money={money} labelFormatter={formatMonth} />} />
           <Area
             dataKey="band"
             name="Likely range"
@@ -389,6 +402,7 @@ export function StackedMonthlyChart({
   series: { dataKey: string; name: string }[];
   height?: number;
 }) {
+  const tooltipTrigger = useTooltipTrigger();
   const totals = data.map((d) =>
     series.reduce((s, k) => s + Number((d as Record<string, unknown>)[k.dataKey] ?? 0), 0)
   );
@@ -424,6 +438,7 @@ export function StackedMonthlyChart({
             width={36}
           />
           <Tooltip
+            trigger={tooltipTrigger}
             content={<ChartTooltip labelFormatter={formatMonth} />}
             cursor={{ fill: "var(--muted)", opacity: 0.5 }}
           />
@@ -464,6 +479,7 @@ export function SimpleBarChart({
   monthLabels?: boolean;
   height?: number;
 }) {
+  const tooltipTrigger = useTooltipTrigger();
   const rows = percent
     ? data.map((d) => {
         const v = (d as Record<string, unknown>)[dataKey];
@@ -495,6 +511,7 @@ export function SimpleBarChart({
           width={44}
         />
         <Tooltip
+            trigger={tooltipTrigger}
           content={
             <ChartTooltip money={money} labelFormatter={monthLabels ? formatMonth : undefined} />
           }

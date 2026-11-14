@@ -1,0 +1,13 @@
+{
+  "name": "makermetrics-android",
+  "private": true,
+  "description": "Android wrapper for the MakerMetrics site. Built by .github/workflows/android-apk.yml.",
+  "dependencies": {
+    "@capacitor/android": "^7.4.0",
+    "@capacitor/core": "^7.4.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^7.4.0"
+  }
+}

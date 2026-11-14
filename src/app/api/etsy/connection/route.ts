@@ -16,7 +16,12 @@ export async function GET(req: Request) {
   if (!user) return Response.json({ error: "Not authenticated" }, { status: 401 });
   try {
     const loaded = await loadConnection(supabase, user.id);
-    return Response.json({ connection: publicInfo(loaded), callbackUrl: callbackUrl(req) });
+    return Response.json({
+      connection: publicInfo(loaded),
+      callbackUrl: callbackUrl(req),
+      // preview deployments have their own address, so their callback URL differs from the live site's
+      preview: process.env.VERCEL_ENV === "preview",
+    });
   } catch (error) {
     // Most likely the Etsy tables haven't been created yet.
     return Response.json({

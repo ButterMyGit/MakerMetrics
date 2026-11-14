@@ -3,16 +3,23 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Loader2, LogOut, Trash2, TriangleAlert, Upload } from "lucide-react";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { clearSalesCache } from "@/lib/data/sales-cache";
 import { useSalesData } from "@/hooks/use-sales-data";
 import { useProfile } from "@/hooks/use-profile";
+import { usePrivacy } from "@/hooks/use-privacy";
 import { PageHeader } from "@/components/page-header";
 import { AccentPicker } from "@/components/accent-picker";
+import { AiSettingsCard } from "@/components/ai-settings-card";
+import { EtsyConnectionCard } from "@/components/etsy-connection-card";
+import { EmailForm, PasswordForm } from "@/components/settings/login-settings";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -21,49 +28,129 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { toast } from "sonner";
 import { formatDate, formatNumber } from "@/lib/format";
-import { AiSettingsCard } from "@/components/ai-settings-card";
-import { EtsyConnectionCard } from "@/components/etsy-connection-card";
-import { usePrivacy } from "@/hooks/use-privacy";
-import { Switch } from "@/components/ui/switch";
-import { Loader2, LogOut, Trash2, TriangleAlert, Upload } from "lucide-react";
 
-export default function SettingsPage() {
-  const router = useRouter();
-  const { allOrders, lineItems, bounds, through } = useSalesData();
-  const { shopName, setShopName, email, isDemo } = useProfile();
-  const privacy = usePrivacy();
-  const units = allOrders.reduce((s, o) => s + o.units, 0);
+const SECTIONS = [
+  { id: "shop", label: "Shop" },
+  { id: "login", label: "Sign-in" },
+  { id: "data", label: "Data" },
+  { id: "analyst", label: "AI Analyst" },
+  { id: "display", label: "Display" },
+  { id: "account", label: "Account" },
+] as const;
+
+function Section({
+  id,
+  title,
+  children,
+}: {
+  id: string;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section id={id} className="scroll-mt-6">
+      <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {title}
+      </h2>
+      <div className="grid gap-4">{children}</div>
+    </section>
+  );
+}
+
+function ShopCard() {
+  const { shopName, setShopName, isDemo, prefs, updatePrefs } = useProfile();
   const [draftName, setDraftName] = useState(shopName ?? "");
+  const [draftDays, setDraftDays] = useState(
+    prefs.processingDays != null ? String(prefs.processingDays) : ""
+  );
   const [saving, setSaving] = useState(false);
 
-  async function saveProfile(e: React.FormEvent) {
+  const nameChanged = draftName.trim() !== (shopName ?? "");
+  const daysChanged = draftDays.trim() !== (prefs.processingDays != null ? String(prefs.processingDays) : "");
+
+  async function save(e: React.FormEvent) {
     e.preventDefault();
-    if (isDemo) {
-      toast.error("The demo account is read-only.");
-      return;
-    }
     setSaving(true);
     try {
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not signed in");
-      const trimmed = draftName.trim() || null;
-      const { error } = await supabase
-        .from("profiles")
-        .upsert({ user_id: user.id, shop_name: trimmed });
-      if (error) throw new Error(error.message);
-      setShopName(trimmed);
-      toast.success("Settings saved.");
+      if (nameChanged) {
+        const supabase = createClient();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) throw new Error("Not signed in");
+        const trimmed = draftName.trim() || null;
+        const { error } = await supabase.from("profiles").upsert({ user_id: user.id, shop_name: trimmed });
+        if (error) throw new Error(error.message);
+        setShopName(trimmed);
+      }
+      if (daysChanged) {
+        const n = Number(draftDays);
+        updatePrefs({
+          processingDays: draftDays.trim() === "" || !Number.isFinite(n) ? null : n,
+        });
+      }
+      toast.success("Saved.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setSaving(false);
     }
   }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Your shop</CardTitle>
+        <CardDescription>
+          The name appears in the sidebar. Processing time is what on-time shipping is measured
+          against.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={save} className="grid max-w-md gap-4">
+          <div className="grid gap-1.5">
+            <Label htmlFor="shop-name">Shop name</Label>
+            <Input
+              id="shop-name"
+              value={draftName}
+              disabled={isDemo}
+              onChange={(e) => setDraftName(e.target.value)}
+              placeholder="My Etsy Shop"
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="processing-days">Processing time</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="processing-days"
+                type="number"
+                min={0}
+                max={90}
+                value={draftDays}
+                onChange={(e) => setDraftDays(e.target.value)}
+                placeholder="e.g. 3"
+                className="w-24"
+              />
+              <span className="text-sm text-muted-foreground">business days to ship an order</span>
+            </div>
+          </div>
+          <Button type="submit" className="w-fit" disabled={saving || (!nameChanged && !daysChanged)}>
+            {saving && <Loader2 className="size-4 animate-spin" />}
+            Save
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function SettingsPage() {
+  const router = useRouter();
+  const { allOrders, lineItems, bounds, through } = useSalesData();
+  const { email, isDemo } = useProfile();
+  const privacy = usePrivacy();
+  const units = allOrders.reduce((s, o) => s + o.units, 0);
 
   async function signOut() {
     const supabase = createClient();
@@ -77,104 +164,127 @@ export default function SettingsPage() {
     <div>
       <PageHeader title="Settings" showRange={false} />
 
-      <div className="grid gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Shop</CardTitle>
-            <CardDescription>Shown in the sidebar and across the app.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={saveProfile} className="grid max-w-md gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="shop-name">Shop name</Label>
-                <Input
-                  id="shop-name"
-                  value={draftName}
-                  disabled={isDemo}
-                  onChange={(e) => setDraftName(e.target.value)}
-                  placeholder="My Etsy Shop"
-                />
-              </div>
-              <Button
-                type="submit"
-                className="w-fit"
-                disabled={isDemo || saving || draftName.trim() === (shopName ?? "")}
-              >
-                {saving && <Loader2 className="size-4 animate-spin" />}
-                Save
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+      <div className="gap-10 lg:grid lg:grid-cols-[160px_minmax(0,1fr)]">
+        <nav aria-label="Settings sections" className="hidden lg:block">
+          <ul className="sticky top-6 grid gap-0.5 text-sm">
+            {SECTIONS.map((s) => (
+              <li key={s.id}>
+                <a
+                  href={`#${s.id}`}
+                  className="block rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  {s.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Appearance</CardTitle>
-            <CardDescription>
-              {isDemo
-                ? "The demo account uses the saved demo theme."
-                : "Pick the accent color used across charts and highlights."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <AccentPicker disabled={isDemo} />
-          </CardContent>
-        </Card>
+        <div className="stagger grid max-w-3xl gap-8">
+          <Section id="shop" title="Shop">
+            <ShopCard />
+          </Section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Data</CardTitle>
-            <CardDescription>
-              {allOrders.length === 0
-                ? "Nothing imported yet."
-                : `${formatNumber(allOrders.length)} orders containing ${formatNumber(lineItems)} line items and ${formatNumber(units)} units${
-                    bounds ? `, from ${formatDate(bounds.min)} to ${formatDate(through ?? bounds.max)}` : ""
-                  }. An order can hold several line items (different products), and a line item can be more than one unit.`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button variant="outline" asChild>
-              <Link href="/import">
-                <Upload className="size-4" />
-                Import or manage data
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
+          <Section id="login" title="Sign-in">
+            <Card>
+              <CardHeader>
+                <CardTitle>Email</CardTitle>
+                <CardDescription>
+                  {isDemo
+                    ? "The demo account's sign-in details can't be changed."
+                    : "The address you sign in with. A change takes effect after you confirm it from the new inbox."}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <EmailForm />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Password</CardTitle>
+                <CardDescription>You&apos;ll stay signed in on this device after changing it.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <PasswordForm />
+              </CardContent>
+            </Card>
+          </Section>
 
-        <EtsyConnectionCard />
+          <Section id="data" title="Data">
+            <Card>
+              <CardHeader>
+                <CardTitle>Imported sales</CardTitle>
+                <CardDescription>
+                  {allOrders.length === 0
+                    ? "Nothing imported yet."
+                    : `${formatNumber(allOrders.length)} orders containing ${formatNumber(lineItems)} line items and ${formatNumber(units)} units${
+                        bounds ? `, from ${formatDate(bounds.min)} to ${formatDate(through ?? bounds.max)}` : ""
+                      }. An order can hold several line items (different products), and a line item can be more than one unit.`}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button variant="outline" asChild>
+                  <Link href="/import">
+                    <Upload className="size-4" />
+                    Import or manage data
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
+            <EtsyConnectionCard />
+          </Section>
 
-        <AiSettingsCard />
+          <Section id="analyst" title="AI Analyst">
+            <AiSettingsCard />
+          </Section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Privacy mode</CardTitle>
-            <CardDescription>
-              Shows buyers as initials and locations as a state or country, and shortens order
-              numbers. Use it for screenshots or when sharing your screen.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-3">
-              <Switch id="privacy-mode" checked={privacy.enabled} onCheckedChange={privacy.toggle} />
-              <Label htmlFor="privacy-mode">{privacy.enabled ? "On" : "Off"}</Label>
-            </div>
-          </CardContent>
-        </Card>
+          <Section id="display" title="Display">
+            <Card>
+              <CardHeader>
+                <CardTitle>Accent color</CardTitle>
+                <CardDescription>
+                  {isDemo ? "The demo account uses the saved demo theme." : "Used for charts and highlights."}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <AccentPicker disabled={isDemo} />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Privacy mode</CardTitle>
+                <CardDescription>
+                  Shows buyers as initials and locations as a state or country, and shortens order
+                  numbers. Use it for screenshots or when sharing your screen.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-3">
+                  <Switch id="privacy-mode" checked={privacy.enabled} onCheckedChange={privacy.toggle} />
+                  <Label htmlFor="privacy-mode">{privacy.enabled ? "On" : "Off"}</Label>
+                </div>
+              </CardContent>
+            </Card>
+          </Section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Account</CardTitle>
-            <CardDescription>{email ?? "…"}</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={signOut}>
-              <LogOut className="size-4" />
-              Sign out
-            </Button>
-            <DeleteAccountDialog isDemo={isDemo} />
-          </CardContent>
-        </Card>
+          <Section id="account" title="Account">
+            <Card>
+              <CardHeader>
+                <CardTitle>Signed in as {email ?? "…"}</CardTitle>
+                <CardDescription>
+                  Deleting your account removes it and everything you imported, permanently.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={signOut}>
+                  <LogOut className="size-4" />
+                  Sign out
+                </Button>
+                <DeleteAccountDialog isDemo={isDemo} />
+              </CardContent>
+            </Card>
+          </Section>
+        </div>
       </div>
     </div>
   );

@@ -100,7 +100,7 @@ export function AiSettingsCard() {
   }
 
   return (
-    <Card id="ai">
+    <Card id="ai" className="scroll-mt-6">
       <CardHeader>
         <CardTitle>AI Analyst</CardTitle>
         <CardDescription>

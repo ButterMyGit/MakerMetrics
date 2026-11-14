@@ -5,6 +5,7 @@ import { ProfileProvider } from "@/hooks/use-profile";
 import { AccentProvider } from "@/components/accent-provider";
 import { DesktopSidebar, MobileTabBar } from "@/components/nav";
 import { CommandPalette } from "@/components/command-palette";
+import { PageTransition } from "@/components/page-transition";
 import { isDemoEmail } from "@/lib/demo-account";
 import { prefsFromSettings } from "@/lib/prefs";
 
@@ -52,7 +53,7 @@ export default async function AppLayout({
           <DesktopSidebar />
           <main className="min-w-0 flex-1 pb-20 lg:pb-0">
             <div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8">
-              {children}
+              <PageTransition>{children}</PageTransition>
             </div>
           </main>
           <MobileTabBar />

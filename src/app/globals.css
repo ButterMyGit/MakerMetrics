@@ -136,3 +136,72 @@ html {
 html::-webkit-scrollbar {
   display: none;
 }
+
+/* ---------------------------------------------------------------------------
+   Motion: short and quiet. Pages and cards ease in, bars grow from the left,
+   buttons give slightly when pressed. All of it is switched off for people
+   who ask their system to reduce motion.
+   ------------------------------------------------------------------------ */
+
+@keyframes mm-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes mm-grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.page-enter {
+  animation: mm-rise 220ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+/* Direct children arrive one after another. */
+.stagger > * {
+  animation: mm-rise 260ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.stagger > *:nth-child(2) { animation-delay: 30ms; }
+.stagger > *:nth-child(3) { animation-delay: 60ms; }
+.stagger > *:nth-child(4) { animation-delay: 90ms; }
+.stagger > *:nth-child(5) { animation-delay: 120ms; }
+.stagger > *:nth-child(6) { animation-delay: 150ms; }
+.stagger > *:nth-child(n + 7) { animation-delay: 180ms; }
+
+.grow-x {
+  transform-origin: left center;
+  animation: mm-grow-x 420ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+[data-slot="button"]:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+[data-slot="card"] {
+  transition: box-shadow 160ms ease, border-color 160ms ease;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

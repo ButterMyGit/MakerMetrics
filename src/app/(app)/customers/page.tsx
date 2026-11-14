@@ -147,7 +147,7 @@ export default function CustomersPage() {
       ) : (
         <div className="flex items-start gap-4">
         <div className="grid min-w-0 flex-1 gap-4">
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
             <KpiCard label="Buyers" value={formatNumber(kpis.uniqueBuyers)} />
             <KpiCard
               label="Repeat buyers"
